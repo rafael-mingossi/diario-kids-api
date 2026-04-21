@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
 
@@ -12,6 +17,14 @@ import (
 )
 
 func main() {
+	// ==========================================
+	// 1. Variáveis de Ambiente (Porta Dinâmica)
+	// ==========================================
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Se não achar a variável, usa a 8080 local
+	}
+
 	// Inicializando o roteador Chi
 	r := chi.NewRouter()
 
@@ -22,11 +35,47 @@ func main() {
 	// rota inicial
 	r.Get("/api/status", handlers.StatusHandler)
 
-	fmt.Println("A API do DK rodando na porta 8080...")
+	// Para termos controle sobre o desligamento, não podemos usar apenas
+	// http.ListenAndServe. Precisamos criar uma "Instância" do servidor:
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
+	}
 
-	// Subindo o servidor com o nosso novo roteador 'r'
-	// O log.Fatal faz duas coisas:
-	// 1. Imprime a mensagem de erro com a data e hora.
-	// 2. Encerra o programa (código de saída 1) imediatamente.
-	log.Fatal(http.ListenAndServe(":8080", r))
+	// ==========================================
+	// 2. Graceful Shutdown (Desligamento Seguro)
+	// ==========================================
+
+	// Criamos um "Canal" (Channel). É assim que coisas rolando em paralelo se comunicam no Go.
+	// Esse canal vai escutar sinais do Sistema Operacional.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGINT, syscall.SIGTERM) // Escuta o sinal de "Ctrl+C" (SIGINT) e "SIGTERM"
+
+	// A palavra 'go' cria uma Goroutine. É como uma thread rodando em background.
+	// Ou seja, o servidor vai subir rodando "de lado", sem travar o código principal.
+	go func() {
+		fmt.Printf("API DK rodando na porta %s... \n", port)
+		// ErrServerClosed é o erro normal de quando pedimos pro servidor desligar.
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Erro ao iniciar o servidor: %v", err)
+		}
+	}()
+
+	// O código principal chega aqui e "trava".
+	// O '<-stop' diz: "Fique esperando até chegar alguma coisa no canal 'stop'."
+	<-stop
+
+	// Se chegou aqui, é porque você apertou Ctrl+C ou o Docker mandou parar.
+	fmt.Println("\n🛑 Sinal recebido. Desligando a API graciosamente...")
+
+	// Criamos um contexto com tempo limite de 5 segundos para o desligamento.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Pedimos para o servidor desligar esperando o tempo do contexto acima.
+	// Ele termina os requests pendentes e fecha as conexões.
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Erro durante o Graceful Shutdown: %v\n", err)
+	}
+	fmt.Println("API DK desligada com sucesso! 👋")
 }
