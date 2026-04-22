@@ -10,16 +10,29 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rafael-mingossi/diario-kids-api/internal/database"
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	// ==========================================
-	// 1. Variáveis de Ambiente (Porta Dinâmica)
-	// ==========================================
+	// =========================
+	// 1. Variáveis de Ambiente
+	// =========================
+
+	//Carrega o arquivo .env se ele existir
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println("⚠️  Aviso: Arquivo .env não encontrado, usando variáveis de sistema.")
+	}
+
+	// Conecta ao banco de dados (Supabase)
+	database.ConnectDB()
+
+	// Porta Dinâmica
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080" // Se não achar a variável, usa a 8080 local
