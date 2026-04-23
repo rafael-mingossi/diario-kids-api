@@ -12,6 +12,7 @@ import (
 	"github.com/rafael-mingossi/diario-kids-api/internal/database"
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
 	"github.com/rafael-mingossi/diario-kids-api/internal/repository"
+	"github.com/rafael-mingossi/diario-kids-api/internal/services"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -38,9 +39,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// === NOVIDADE: Injeção de Dependência ===
+	// === Injeção de Dependência Definitiva ===
 	usuarioRepo := repository.NewUsuarioRepository(db)
-	usuarioHandler := handlers.NewUsuarioHandler(usuarioRepo)
+	usuarioService := services.NewUsuarioService(usuarioRepo)
+	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
 	// ========================================
 
 	// Porta Dinâmica
