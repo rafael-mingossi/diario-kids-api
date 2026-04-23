@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,17 +25,30 @@ func main() {
 	//Carrega o arquivo .env se ele existir
 	err := godotenv.Load()
 	if err != nil {
-		fmt.Println("⚠️  Aviso: Arquivo .env não encontrado, usando variáveis de sistema.")
+		// Substituímos o fmt.Println pelo slog.Warn
+		slog.Warn("⚠️  Aviso: Arquivo .env não encontrado, usando variáveis de sistema.")
 	}
 
 	// Conecta ao banco de dados (Supabase)
-	database.ConnectDB()
+	db, err := database.ConnectDB()
+	if err != nil {
+		// Se o Ping falhar, ou a senha estiver errada, matamos o app aqui.
+		slog.Error("Falha crítica ao iniciar banco de dados", "erro", err)
+		os.Exit(1)
+	}
+
+	// Por enquanto, apenas para o Go não reclamar que a variável 'db' não está sendo usada:
+	_ = db
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080" // Se não achar a variável, usa a 8080 local
 	}
+
+	// =========================
+	// 2. Setup do Servidor
+	// =========================
 
 	// Inicializando o roteador Chi
 	r := chi.NewRouter()
@@ -55,22 +67,25 @@ func main() {
 		Handler: r,
 	}
 
-	// ==========================================
-	// 2. Graceful Shutdown (Desligamento Seguro)
-	// ==========================================
+	// ====================
+	// 3. Graceful Shutdown
+	// ====================
 
 	// Criamos um "Canal" (Channel). É assim que coisas rolando em paralelo se comunicam no Go.
 	// Esse canal vai escutar sinais do Sistema Operacional.
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGINT, syscall.SIGTERM) // Escuta o sinal de "Ctrl+C" (SIGINT) e "SIGTERM"
+
+	// Removido o os.Interrupt, mantendo apenas os sinais limpos do sistema
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	// A palavra 'go' cria uma Goroutine. É como uma thread rodando em background.
 	// Ou seja, o servidor vai subir rodando "de lado", sem travar o código principal.
 	go func() {
-		fmt.Printf("API DK rodando na porta %s... \n", port)
+		slog.Info("API DK iniciada", "porta", port)
 		// ErrServerClosed é o erro normal de quando pedimos pro servidor desligar.
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Erro ao iniciar o servidor: %v", err)
+			slog.Error("Erro ao iniciar o servidor", "erro", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -79,7 +94,7 @@ func main() {
 	<-stop
 
 	// Se chegou aqui, é porque você apertou Ctrl+C ou o Docker mandou parar.
-	fmt.Println("\n🛑 Sinal recebido. Desligando a API graciosamente...")
+	slog.Info("🛑 Sinal recebido. Desligando a API graciosamente...")
 
 	// Criamos um contexto com tempo limite de 5 segundos para o desligamento.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -88,7 +103,7 @@ func main() {
 	// Pedimos para o servidor desligar esperando o tempo do contexto acima.
 	// Ele termina os requests pendentes e fecha as conexões.
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Erro durante o Graceful Shutdown: %v\n", err)
+		slog.Error("Erro durante o Graceful Shutdown", "erro", err)
 	}
-	fmt.Println("API DK desligada com sucesso! 👋")
+	slog.Info("API DK desligada com sucesso! 👋")
 }
