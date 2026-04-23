@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/database"
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
+	"github.com/rafael-mingossi/diario-kids-api/internal/repository"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -37,8 +38,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Por enquanto, apenas para o Go não reclamar que a variável 'db' não está sendo usada:
-	_ = db
+	// === NOVIDADE: Injeção de Dependência ===
+	usuarioRepo := repository.NewUsuarioRepository(db)
+	usuarioHandler := handlers.NewUsuarioHandler(usuarioRepo)
+	// ========================================
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
@@ -59,6 +62,10 @@ func main() {
 
 	// rota inicial
 	r.Get("/api/status", handlers.StatusHandler)
+
+	// === NOVIDADE: A nossa nova rota POST ===
+	r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
+	// ========================================
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas
 	// http.ListenAndServe. Precisamos criar uma "Instância" do servidor:
