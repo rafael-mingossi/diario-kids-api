@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
@@ -10,12 +12,13 @@ import (
 )
 
 type UsuarioHandler struct {
-	service  *services.UsuarioService
+	// NOVIDADE: Agora usamos a Interface (sem o asterisco *)
+	service  services.UsuarioService
 	validate *validator.Validate
 }
 
 // Recebe o Service e inicializa o Validador
-func NewUsuarioHandler(service *services.UsuarioService) *UsuarioHandler {
+func NewUsuarioHandler(service services.UsuarioService) *UsuarioHandler {
 	return &UsuarioHandler{
 		service:  service,
 		validate: validator.New(),
@@ -40,12 +43,24 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	// 3. Manda para a Cozinha (Service) fazer o trabalho pesado
 	resposta, err := h.service.CriarUsuario(input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Feedback 2: Tratamos o erro específico de conflito (HTTP 409)
+		if errors.Is(err, services.ErrEmailEmUso) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+
+		// Feedback 1: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal
+		slog.Error("Erro interno ao criar usuário", "detalhe", err)
+		http.Error(w, "Erro interno no servidor. Tente novamente mais tarde.", http.StatusInternalServerError)
 		return
 	}
 
 	// 4. Entrega o prato (HTTP 201 Created com a resposta limpa)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resposta)
+
+	// Feedback 4: Não ignoramos o erro do JSON Encoder
+	if err := json.NewEncoder(w).Encode(resposta); err != nil {
+		slog.Error("Erro ao enviar resposta JSON", "detalhe", err)
+	}
 }

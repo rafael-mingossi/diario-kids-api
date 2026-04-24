@@ -1,6 +1,10 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time" //pacote nativo do Go para lidar com datas e horas
+
+	"gorm.io/gorm"
+)
 
 // Usuario representa Pais, Professores, Diretores e Proprietários.
 type Usuario struct {
@@ -32,8 +36,9 @@ type Sala struct {
 // Aluno representa as crianças
 type Aluno struct {
 	gorm.Model
-	Nome           string `gorm:"not null"`
-	DataNascimento string `gorm:"not null"`
+	Nome string `gorm:"not null"`
+	// NOVIDADE: Alterado de string para time.Time
+	DataNascimento time.Time `gorm:"type:date;not null"`
 
 	// Relação de Pertencimento: O aluno pertence a uma sala
 	SalaID uint

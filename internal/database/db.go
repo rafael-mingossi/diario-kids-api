@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger" // NOVIDADE: Importando o logger do GORM
 )
 
 // Agora a função retorna o banco de dados e um possível erro.
@@ -29,6 +31,17 @@ func ConnectDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("DATABASE_URL não encontrada nas variáveis de ambiente")
 	}
 
+	// Criamos um logger customizado para o GORM
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags), // Escreve no terminal
+		logger.Config{
+			SlowThreshold:             time.Second, // Vai te avisar se uma query demorar mais de 1 segundo
+			LogLevel:                  logger.Warn, // Mantém ativo para vermos as queries SQL se precisarmos
+			IgnoreRecordNotFoundError: true,        // A MÁGICA AQUI: Silencia o "record not found"
+			Colorful:                  true,        // Deixa o terminal bonitinho e colorido
+		},
+	)
+
 	/*
 		No Go, funções podem retornar múltiplos valores nativamente.
 		O 'gorm.Open' sempre devolve (1) a Conexão e (2) um Erro.
@@ -36,7 +49,10 @@ func ConnectDB() (*gorm.DB, error) {
 		  são a convenção oficial da comunidade.
 	*/
 	// Conecta ao Supabase usando o GORM
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	// Passamos o novo logger para a configuração do GORM
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: newLogger,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("Erro ao conectar ao banco de dados: %v", err)
 	}

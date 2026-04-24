@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/dto"
@@ -9,26 +10,41 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// O Service depende da Interface do Repository!
-type UsuarioService struct {
+// NOVIDADE: O Service agora também tem uma Interface Pública!
+type UsuarioService interface {
+	CriarUsuario(input dto.CriarUsuarioInput) (*dto.UsuarioResponse, error)
+}
+
+// A implementação virou privada (letra minúscula)
+type usuarioService struct {
 	repo repository.UsuarioRepository
 }
 
-// O Construtor do Service recebe a Interface do Repository
-func NewUsuarioService(repo repository.UsuarioRepository) *UsuarioService {
-	return &UsuarioService{repo: repo}
+// O construtor devolve a Interface
+func NewUsuarioService(repo repository.UsuarioRepository) UsuarioService {
+	return &usuarioService{repo: repo}
 }
 
-// O Service recebe o DTO de Input, processa as regras de negócio, e devolve o DTO de Output
-func (s *UsuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.UsuarioResponse, error) {
+// NOVIDADE: Criamos um erro customizado para o Handler saber quando é conflito
+var ErrEmailEmUso = errors.New("este email já está cadastrado")
 
-	// 1. Regra de Negócio: Criptografia (Custo 10 está ótimo para começar)
+// O Service recebe o DTO de Input, processa as regras de negócio, e devolve o DTO de Output
+func (s *usuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.UsuarioResponse, error) {
+
+	// 1. Verificamos se o email já existe (Feedback 2)
+	usuarioExistente, err := s.repo.BuscarPorEmail(input.Email)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao verificar email: %w", err)
+	}
+	if usuarioExistente != nil {
+		return nil, ErrEmailEmUso // Devolvemos nosso erro específico!
+	}
+
 	senhaHash, err := bcrypt.GenerateFromPassword([]byte(input.Senha), 10)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criptografar senha: %w", err)
 	}
 
-	// 2. Monta o modelo de banco de dados
 	novoUsuario := models.Usuario{
 		Nome:      input.Nome,
 		Email:     input.Email,
@@ -36,12 +52,14 @@ func (s *UsuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.Usuario
 		Role:      input.Role,
 	}
 
-	// 3. Pede para o Repositório salvar
 	if err := s.repo.Criar(&novoUsuario); err != nil {
-		return nil, fmt.Errorf("erro no banco de dados (email duplicado?): %w", err)
+		// A nossa trava anti-TOCTOU entra aqui!
+		if errors.Is(err, repository.ErrEmailDuplicadoDB) {
+			return nil, ErrEmailEmUso // Transforma no erro 409 que o Handler já entende
+		}
+		return nil, fmt.Errorf("erro ao inserir no banco: %w", err)
 	}
 
-	// 4. Monta a resposta limpa (sem a senha!)
 	resposta := dto.UsuarioResponse{
 		ID:    novoUsuario.ID,
 		Nome:  novoUsuario.Nome,
