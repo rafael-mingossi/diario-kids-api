@@ -16,6 +16,7 @@ type UsuarioRepository interface {
 }
 
 // 2. A Implementação Privada
+// Repository is an interface because the service depends on it
 type usuarioRepository struct {
 	db *gorm.DB
 }
@@ -28,6 +29,9 @@ func NewUsuarioRepository(db *gorm.DB) UsuarioRepository {
 // NOVIDADE: Uma constante pública para o Service saber o que aconteceu, sem saber de Postgres
 var ErrEmailDuplicadoDB = errors.New("violação de restrição única (email duplicado)")
 
+// se o Receiver estiver sem * (ponteiro)?
+// Toda vez que alguém chamar o método .Criar(), o Go vai pegar a struct
+// usuarioRepository e vai criar um clone completo dela só para executar a função.
 func (r *usuarioRepository) Criar(usuario *models.Usuario) error {
 	err := r.db.Create(usuario).Error
 	if err != nil {
@@ -58,4 +62,5 @@ func (r *usuarioRepository) BuscarPorEmail(email string) (*models.Usuario, error
 	}
 
 	return &usuario, nil
+	//ou retornar nil, nil se o email não for encontrado
 }

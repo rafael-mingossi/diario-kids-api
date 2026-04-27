@@ -17,8 +17,15 @@ type UsuarioHandler struct {
 	validate *validator.Validate
 }
 
+//Handler has no interface and no private struct because nothing depends on it.
+
 // Recebe o Service e inicializa o Validador
+// Retorna um endereço de memória que aponta para um UsuarioHandler
+// O * no retorno significa "Aviso: quem chamar essa função vai receber um endereço, não a struct inteira".
+// Se a função retornasse apenas UsuarioHandler (sem *), ela criaria o objeto e entregaria uma cópia pesada para quem a chamou.
+// Retornando o ponteiro, você passa o objeto recém-criado adiante de forma super leve.
 func NewUsuarioHandler(service services.UsuarioService) *UsuarioHandler {
+	// O & comercial significa "Crie isso na memória e me dê o endereço de onde ficou"
 	return &UsuarioHandler{
 		service:  service,
 		validate: validator.New(),

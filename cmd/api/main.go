@@ -39,11 +39,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// === Injeção de Dependência Definitiva ===
+	// ==========================================
+	// INJEÇÃO DE DEPENDÊNCIAS
+	// ==========================================
+
+	// 1. Repositórios (Acesso a dados)
+	// Criamos a conexão com a tabela de usuários uma única vez
 	usuarioRepo := repository.NewUsuarioRepository(db)
+
+	// 2. Serviços (Regras de negócio)
 	usuarioService := services.NewUsuarioService(usuarioRepo)
+	// NOVIDADE: Criamos o AuthService reutilizando o mesmo usuarioRepo!
+	authService := services.NewAuthService(usuarioRepo)
+
+	// 3. Handlers (Recepção HTTP)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
-	// ========================================
+	// NOVIDADE: Injetamos o authService no authHandler
+	authHandler := handlers.NewAuthHandler(authService)
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
@@ -67,6 +79,9 @@ func main() {
 
 	// === NOVIDADE: A nossa nova rota POST ===
 	r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
+
+	// === NOVIDADE: Rota de login ===
+	r.Post("/api/login", authHandler.Login)
 	// ========================================
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas

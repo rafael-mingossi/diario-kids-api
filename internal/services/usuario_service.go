@@ -16,6 +16,7 @@ type UsuarioService interface {
 }
 
 // A implementação virou privada (letra minúscula)
+// Service is an interface for the same reason — the handler depends on it
 type usuarioService struct {
 	repo repository.UsuarioRepository
 }
@@ -45,6 +46,7 @@ func (s *usuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.Usuario
 		return nil, fmt.Errorf("erro ao criptografar senha: %w", err)
 	}
 
+	// Transformação: DTO (Entrada) -> Model (Banco)
 	novoUsuario := models.Usuario{
 		Nome:      input.Nome,
 		Email:     input.Email,
@@ -52,14 +54,19 @@ func (s *usuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.Usuario
 		Role:      input.Role,
 	}
 
+	// Delegação: Pede ao repositório para salvar o novo usuário
 	if err := s.repo.Criar(&novoUsuario); err != nil {
+		// Regra 2: Tratamento de Conflito.
+		// Avalia o erro técnico do Repositório e o traduz para uma regra de negócio.
 		// A nossa trava anti-TOCTOU entra aqui!
 		if errors.Is(err, repository.ErrEmailDuplicadoDB) {
 			return nil, ErrEmailEmUso // Transforma no erro 409 que o Handler já entende
 		}
+		// Se for outro erro (ex: banco offline), repassa.
 		return nil, fmt.Errorf("erro ao inserir no banco: %w", err)
 	}
 
+	// Transformação: Model (Banco) -> DTO (Saída segura)
 	resposta := dto.UsuarioResponse{
 		ID:    novoUsuario.ID,
 		Nome:  novoUsuario.Nome,
