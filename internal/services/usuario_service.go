@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/dto"
-	"github.com/rafael-mingossi/diario-kids-api/internal/models"
+	"github.com/rafael-mingossi/diario-kids-api/internal/mappers"
 	"github.com/rafael-mingossi/diario-kids-api/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -41,38 +41,32 @@ func (s *usuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.Usuario
 		return nil, ErrEmailEmUso // Devolvemos nosso erro específico!
 	}
 
-	senhaHash, err := bcrypt.GenerateFromPassword([]byte(input.Senha), 10)
+	// 2. Responsabilidade do Service: criptografia da senha.
+	// Isso fica aqui e NÃO no mapper — o mapper é burro por design.
+	senhaHash, err := bcrypt.GenerateFromPassword([]byte(input.Senha), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criptografar senha: %w", err)
 	}
 
-	// Transformação: DTO (Entrada) -> Model (Banco)
-	novoUsuario := models.Usuario{
-		Nome:      input.Nome,
-		Email:     input.Email,
-		SenhaHash: string(senhaHash),
-		Role:      input.Role,
-	}
+	// 3. Delegação ao Mapper: transforma o DTO de entrada + senha hash em um Model de banco.
+	// O Service não sabe mais quais campos o model tem — isso é responsabilidade do mapper.
+	novoUsuario := mappers.CriarInputToModel(input, string(senhaHash))
 
-	// Delegação: Pede ao repositório para salvar o novo usuário
+	// 4. Delegação ao Repository: persiste o model no banco.
 	if err := s.repo.Criar(&novoUsuario); err != nil {
-		// Regra 2: Tratamento de Conflito.
-		// Avalia o erro técnico do Repositório e o traduz para uma regra de negócio.
-		// A nossa trava anti-TOCTOU entra aqui!
+		// Anti-TOCTOU: mesmo que dois requests passem pela checagem de email
+		// simultaneamente, o unique index do banco barra o segundo INSERT.
+		// O repository traduz o erro do Postgres (código 23505) para ErrEmailDuplicadoDB,
+		// e aqui o service traduz para ErrEmailEmUso que o handler já conhece.
 		if errors.Is(err, repository.ErrEmailDuplicadoDB) {
-			return nil, ErrEmailEmUso // Transforma no erro 409 que o Handler já entende
+			return nil, ErrEmailEmUso
 		}
-		// Se for outro erro (ex: banco offline), repassa.
 		return nil, fmt.Errorf("erro ao inserir no banco: %w", err)
 	}
 
-	// Transformação: Model (Banco) -> DTO (Saída segura)
-	resposta := dto.UsuarioResponse{
-		ID:    novoUsuario.ID,
-		Nome:  novoUsuario.Nome,
-		Email: novoUsuario.Email,
-		Role:  novoUsuario.Role,
-	}
+	// 5. Delegação ao Mapper: transforma o Model salvo (já com ID do banco) em DTO de saída.
+	// SenhaHash é omitido pelo mapper — o cliente nunca a recebe.
+	resposta := mappers.ModelToUsuarioResponse(novoUsuario)
 
 	return &resposta, nil
 }
