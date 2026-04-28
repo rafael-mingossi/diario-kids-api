@@ -28,6 +28,18 @@ func NewAuthService(repo repository.UsuarioRepository) AuthService {
 	return &authService{repo: repo}
 }
 
+// ErrCredenciaisInvalidas é o erro exportado (público) para falhas de autenticação
+// esperadas: email não encontrado ou senha incorreta.
+//
+// Por que exportar este erro específico?
+// O handler precisa distinguir dois cenários completamente diferentes:
+//   - Credenciais erradas → 401 Unauthorized (problema do cliente, mensagem vaga)
+//   - Erro interno (DB fora, JWT_SECRET ausente) → 500 Internal Server Error (problema nosso, logar)
+//
+// Analogia JS: é como ter uma classe customizada de erro `InvalidCredentialsError`
+// que você captura separadamente no catch para retornar 401 vs 500.
+var ErrCredenciaisInvalidas = errors.New("credenciais inválidas")
+
 // UsuarioClaims define o "recheio" (payload) do nosso JWT.
 // Analogia JS: é o objeto { sub, email, role, iat, exp } que você passaria
 // para jwt.sign() no Node.js.
@@ -98,7 +110,7 @@ func (s *authService) Login(input dto.LoginInput) (*dto.LoginResponse, error) {
 	// Nunca dizemos "email não encontrado" — isso ajudaria atacantes a descobrir
 	// quais emails estão cadastrados (account enumeration attack).
 	if usuario == nil {
-		return nil, errors.New("credenciais inválidas")
+		return nil, ErrCredenciaisInvalidas
 	}
 
 	// 3. Comparar a senha enviada com o hash armazenado no banco.
@@ -106,7 +118,7 @@ func (s *authService) Login(input dto.LoginInput) (*dto.LoginResponse, error) {
 	err = bcrypt.CompareHashAndPassword([]byte(usuario.SenhaHash), []byte(input.Senha))
 	if err != nil {
 		// Mesmo erro vago — o cliente não sabe se foi o email ou a senha que estava errada
-		return nil, errors.New("credenciais inválidas")
+		return nil, ErrCredenciaisInvalidas
 	}
 
 	// 4. Credenciais válidas — geramos o JWT real com os dados do usuário
