@@ -11,6 +11,9 @@ import (
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/database"
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
+	// Importamos nosso middleware com um alias 'authmiddleware' para não colidir
+	// com o pacote de middleware do Chi que também se chama 'middleware'.
+	authmiddleware "github.com/rafael-mingossi/diario-kids-api/internal/middleware"
 	"github.com/rafael-mingossi/diario-kids-api/internal/repository"
 	"github.com/rafael-mingossi/diario-kids-api/internal/services"
 
@@ -29,6 +32,16 @@ func main() {
 	if err != nil {
 		// Substituímos o fmt.Println pelo slog.Warn
 		slog.Warn("⚠️  Aviso: Arquivo .env não encontrado, usando variáveis de sistema.")
+	}
+
+	// Validação de segurança: o JWT_SECRET é obrigatório para a API funcionar.
+	// Se não estiver definido, matamos o processo na inicialização — é muito melhor
+	// descobrir isso agora do que servir tokens inválidos em produção.
+	// Analogia JS: como um `if (!process.env.JWT_SECRET) throw new Error(...)` no topo do app.
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		slog.Error("JWT_SECRET não encontrado. Defina-o no .env ou nas variáveis de ambiente.")
+		os.Exit(1)
 	}
 
 	// Conecta ao banco de dados (Supabase)
@@ -74,15 +87,38 @@ func main() {
 	r.Use(middleware.Logger)    // Faz um "console.log" automático de cada requisição
 	r.Use(middleware.Recoverer) // Se o app der um erro fatal (panic), ele não derruba o servidor inteiro
 
-	// rota inicial
+	// ==========================================
+	// ROTAS PÚBLICAS — não precisam de token JWT
+	// ==========================================
+
+	// Health check — sempre acessível
 	r.Get("/api/status", handlers.StatusHandler)
 
-	// === NOVIDADE: A nossa nova rota POST ===
+	// Registro de novo usuário — público para permitir o cadastro inicial
 	r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
 
-	// === NOVIDADE: Rota de login ===
+	// Login — público por natureza (é aqui que o token é obtido)
 	r.Post("/api/login", authHandler.Login)
-	// ========================================
+
+	// ==========================================
+	// ROTAS PROTEGIDAS — exigem token JWT válido
+	// ==========================================
+	// r.Group cria um sub-roteador isolado onde aplicamos o middleware apenas
+	// para as rotas dentro do bloco. Rotas fora do grupo não são afetadas.
+	//
+	// Analogia JS: é como criar um router separado no Express e fazer
+	// router.use(authenticateToken) antes de registrar as rotas protegidas,
+	// depois montar com app.use('/api', router).
+	r.Group(func(r chi.Router) {
+		// Aplicamos o middleware de verificação JWT a todas as rotas deste grupo.
+		// Passamos o secret lido do ambiente — injeção de dependência, não global.
+		r.Use(authmiddleware.Verificar(jwtSecret))
+
+		// As próximas rotas da API (alunos, salas, diários) serão registradas aqui.
+		// Exemplo futuro:
+		// r.Get("/api/alunos", alunoHandler.Listar)
+		// r.Post("/api/salas", salaHandler.Criar)
+	})
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas
 	// http.ListenAndServe. Precisamos criar uma "Instância" do servidor:
