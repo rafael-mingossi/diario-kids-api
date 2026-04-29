@@ -35,8 +35,19 @@ func NewUsuarioHandler(service services.UsuarioService) *UsuarioHandler {
 func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	var input dto.CriarUsuarioInput
 
-	// 1. Lê o JSON (O Garçom anota o pedido)
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	// 1. Limita o tamanho do body para prevenir "body bomb" (DoS por payload gigante).
+	r.Body = http.MaxBytesReader(w, r.Body, 1*1024*1024) // 1MB
+
+	// 2. Lê o JSON (O Garçom anota o pedido).
+	// DisallowUnknownFields rejeita campos extras não declarados no DTO.
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "corpo da requisição muito grande", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
 		return
 	}
@@ -62,12 +73,18 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Entrega o prato (HTTP 201 Created com a resposta limpa)
+	// 4. Serializamos a resposta ANTES de escrever qualquer header.
+	// Mesmo padrão do auth_handler: se o Marshal falhar, ainda podemos retornar 500.
+	// Se chamarmos WriteHeader(201) primeiro e o Marshal falhar depois, o cliente
+	// recebe um 201 com corpo vazio — inconsistência difícil de depurar.
+	corpo, err := json.Marshal(resposta)
+	if err != nil {
+		slog.Error("erro ao serializar resposta de criação de usuário", "detalhe", err)
+		http.Error(w, "erro interno no servidor", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-
-	// Feedback 4: Não ignoramos o erro do JSON Encoder
-	if err := json.NewEncoder(w).Encode(resposta); err != nil {
-		slog.Error("Erro ao enviar resposta JSON", "detalhe", err)
-	}
+	w.Write(corpo) //nolint:errcheck // Erro de escrita de rede após WriteHeader não é acionável
 }

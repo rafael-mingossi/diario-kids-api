@@ -26,8 +26,24 @@ func NewAuthHandler(service services.AuthService) *AuthHandler {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var input dto.LoginInput
 
-	// 1. Lê o JSON do corpo da requisição
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	// 1. Limita o tamanho do body para prevenir "body bomb" (DoS por payload gigante).
+	// Sem isso, um atacante poderia enviar um JSON de vários GBs e esgotar a memória do servidor.
+	// Analogia JS: no Express isso é configurado via `express.json({ limit: '1mb' })`.
+	r.Body = http.MaxBytesReader(w, r.Body, 1*1024*1024) // 1MB
+
+	// 2. Lê o JSON do corpo da requisição.
+	// DisallowUnknownFields rejeita payloads com campos que não existem no DTO.
+	// Previne parameter pollution e sinaliza erros de integração cedo.
+	// Analogia JS: é como um schema Zod/Joi com `.strict()` ativado.
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		// Diferenciamos o erro de payload muito grande (413) do erro de JSON inválido (400)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "corpo da requisição muito grande", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
 		return
 	}
