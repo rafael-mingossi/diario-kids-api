@@ -98,6 +98,23 @@ func gerarJWT(id uint, email, role string) (string, error) {
 	return tokenString, nil
 }
 
+// dummyHash é um hash bcrypt pré-computado que usamos quando o usuário não existe.
+//
+// Por que isso é necessário? Timing attack (ataque por tempo de resposta):
+//   - Quando o email NÃO existe: sem este hash, retornaríamos imediatamente (~1ms)
+//   - Quando o email EXISTE mas senha errada: bcrypt.Compare leva ~200ms
+//
+// Um atacante pode medir esse tempo e descobrir quais emails estão cadastrados,
+// mesmo sem a mensagem de erro dizê-lo. É o mesmo tipo de vulnerabilidade que
+// afetou sistemas como o LinkedIn e o WordPress no passado.
+//
+// A solução: sempre executar o bcrypt.Compare, seja com o hash real ou com este dummy.
+// O tempo de resposta fica ~200ms em ambos os casos — indistinguível para um atacante.
+//
+// O valor abaixo é um hash bcrypt válido de uma string aleatória, gerado uma única vez.
+// Nunca corresponderá à senha de nenhum usuário real.
+var dummyHash = "$2a$10$dummy.hash.para.timing.attack.protection.apenas"
+
 // Login implementa a regra de negócio de autenticação
 func (s *authService) Login(input dto.LoginInput) (*dto.LoginResponse, error) {
 	// 1. Buscar o usuário no banco pelo email
@@ -106,22 +123,32 @@ func (s *authService) Login(input dto.LoginInput) (*dto.LoginResponse, error) {
 		return nil, fmt.Errorf("erro interno ao buscar usuario: %w", err)
 	}
 
-	// 2. Se o usuário não existe, barramos com erro vago de propósito.
-	// Nunca dizemos "email não encontrado" — isso ajudaria atacantes a descobrir
-	// quais emails estão cadastrados (account enumeration attack).
-	if usuario == nil {
+	// 2. Defesa contra timing attack: decidimos qual hash comparar ANTES de verificar
+	// se o usuário existe. Se o email não está cadastrado, usamos o dummyHash.
+	// Isso garante que bcrypt.CompareHashAndPassword SEMPRE é executado,
+	// independentemente de o email existir ou não — o tempo de resposta fica igual.
+	//
+	// Analogia JS: em vez de um early return, sempre chegamos ao passo do crypto.compare(),
+	// só que com dados diferentes dependendo do caso.
+	hashParaComparar := dummyHash
+	if usuario != nil {
+		hashParaComparar = usuario.SenhaHash
+	}
+
+	// 3. Sempre executamos o bcrypt — ~200ms em ambos os casos (usuário existe ou não).
+	// bcrypt.CompareHashAndPassword é resistente a timing attacks por design interno também.
+	bcryptErr := bcrypt.CompareHashAndPassword([]byte(hashParaComparar), []byte(input.Senha))
+
+	// 4. Agora verificamos os resultados — mas na perspectiva do atacante,
+	// esta parte já não importa porque o tempo foi "gasto" no bcrypt acima.
+	//
+	// Retornamos o mesmo erro genérico para AMBOS os casos de falha:
+	// usuário não existe OU senha errada → mesma resposta, mesmo tempo.
+	if usuario == nil || bcryptErr != nil {
 		return nil, ErrCredenciaisInvalidas
 	}
 
-	// 3. Comparar a senha enviada com o hash armazenado no banco.
-	// bcrypt.CompareHashAndPassword é resistente a timing attacks por design.
-	err = bcrypt.CompareHashAndPassword([]byte(usuario.SenhaHash), []byte(input.Senha))
-	if err != nil {
-		// Mesmo erro vago — o cliente não sabe se foi o email ou a senha que estava errada
-		return nil, ErrCredenciaisInvalidas
-	}
-
-	// 4. Credenciais válidas — geramos o JWT real com os dados do usuário
+	// 5. Credenciais válidas — geramos o JWT real com os dados do usuário
 	tokenString, err := gerarJWT(usuario.ID, usuario.Email, usuario.Role)
 	if err != nil {
 		// Erro interno (ex: JWT_SECRET ausente). Repassamos para o handler logar.

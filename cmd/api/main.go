@@ -97,8 +97,21 @@ func main() {
 	// Registro de novo usuário — público para permitir o cadastro inicial
 	r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
 
-	// Login — público por natureza (é aqui que o token é obtido)
-	r.Post("/api/login", authHandler.Login)
+	// Login com rate limiting por IP.
+	//
+	// NovoLimitadorPorIP(1, 5) significa:
+	//   - 1 = taxa de reabastecimento: 1 ficha por segundo por IP
+	//   - 5 = burst: um IP pode fazer até 5 tentativas instantâneas antes de ser bloqueado
+	//
+	// Valores conservadores adequados para login:
+	//   - Um humano que errou a senha 3 vezes ainda passa (burst de 5 cobre isso).
+	//   - Após esgotar o burst, só consegue 1 nova tentativa por segundo.
+	//   - Scripts de brute force são bloqueados após a 5ª tentativa.
+	//
+	// r.With() aplica o middleware APENAS para esta rota específica.
+	// Analogia JS: router.post('/api/login', rateLimitMiddleware, authHandler.login)
+	loginLimiter := authmiddleware.NovoLimitadorPorIP(1, 5)
+	r.With(loginLimiter.LimitarRequisicoes()).Post("/api/login", authHandler.Login)
 
 	// ==========================================
 	// ROTAS PROTEGIDAS — exigem token JWT válido
