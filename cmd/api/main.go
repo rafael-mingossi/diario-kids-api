@@ -57,18 +57,18 @@ func main() {
 	// ==========================================
 
 	// 1. Repositórios (Acesso a dados)
-	// Criamos a conexão com a tabela de usuários uma única vez
 	usuarioRepo := repository.NewUsuarioRepository(db)
+	salaRepo := repository.NewSalaRepository(db)
 
 	// 2. Serviços (Regras de negócio)
 	usuarioService := services.NewUsuarioService(usuarioRepo)
-	// NOVIDADE: Criamos o AuthService reutilizando o mesmo usuarioRepo!
 	authService := services.NewAuthService(usuarioRepo)
+	salaService := services.NewSalaService(salaRepo)
 
 	// 3. Handlers (Recepção HTTP)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
-	// NOVIDADE: Injetamos o authService no authHandler
 	authHandler := handlers.NewAuthHandler(authService)
+	salaHandler := handlers.NewSalaHandler(salaService)
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
@@ -127,10 +127,8 @@ func main() {
 		// Passamos o secret lido do ambiente — injeção de dependência, não global.
 		r.Use(authmiddleware.Verificar(jwtSecret))
 
-		// As próximas rotas da API (alunos, salas, diários) serão registradas aqui.
-		// Exemplo futuro:
-		// r.Get("/api/alunos", alunoHandler.Listar)
-		// r.Post("/api/salas", salaHandler.Criar)
+		// Sala — apenas usuários autenticados podem criar salas
+		r.Post("/api/salas", salaHandler.CriarSala)
 	})
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas

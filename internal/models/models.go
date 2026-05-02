@@ -23,11 +23,18 @@ type Usuario struct {
 // Sala representa o Berçário, Infantil 1, etc.
 type Sala struct {
 	gorm.Model
-	Nome string `gorm:"not null"`
+	// Nome pode se repetir entre salas diferentes.
+	// A unicidade real da sala será a combinação Nome + Numero.
+	Nome string `gorm:"not null;uniqueIndex:idx_sala_nome_numero"`
 
-	// Relação 1:1 com Professor (Uma sala tem 1 professor)
-	ProfessorID uint
-	Professor   Usuario `gorm:"foreignKey:ProfessorID"`
+	// Numero identifica a turma/sala dentro do mesmo Nome.
+	// Exemplos válidos de negócio: "1", "2", "A", "B".
+	Numero string `gorm:"not null;uniqueIndex:idx_sala_nome_numero"`
+
+	// Professor é opcional no momento da criação da sala.
+	// Usamos *uint para representar ausência real (nil), em vez de 0.
+	ProfessorID *uint
+	Professor   *Usuario `gorm:"foreignKey:ProfessorID"`
 
 	// Relação 1:N com Alunos (Uma sala tem muitos alunos)
 	Alunos []Aluno
