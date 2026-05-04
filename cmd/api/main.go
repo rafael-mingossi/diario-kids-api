@@ -11,6 +11,7 @@ import (
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/database"
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
+
 	// Importamos nosso middleware com um alias 'authmiddleware' para não colidir
 	// com o pacote de middleware do Chi que também se chama 'middleware'.
 	authmiddleware "github.com/rafael-mingossi/diario-kids-api/internal/middleware"
@@ -59,16 +60,19 @@ func main() {
 	// 1. Repositórios (Acesso a dados)
 	usuarioRepo := repository.NewUsuarioRepository(db)
 	salaRepo := repository.NewSalaRepository(db)
+	alunoRepo := repository.NewAlunoRepository(db)
 
 	// 2. Serviços (Regras de negócio)
 	usuarioService := services.NewUsuarioService(usuarioRepo)
 	authService := services.NewAuthService(usuarioRepo)
 	salaService := services.NewSalaService(salaRepo)
+	alunoService := services.NewAlunoService(alunoRepo)
 
 	// 3. Handlers (Recepção HTTP)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
 	authHandler := handlers.NewAuthHandler(authService)
 	salaHandler := handlers.NewSalaHandler(salaService)
+	alunoHandler := handlers.NewAlunoHandler(alunoService)
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
@@ -129,6 +133,9 @@ func main() {
 
 		// Sala — apenas usuários autenticados podem criar salas
 		r.Post("/api/salas", salaHandler.CriarSala)
+
+		// Aluno — apenas usuários autenticados podem criar alunos
+		r.Post("/api/alunos", alunoHandler.CriarAluno)
 	})
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas

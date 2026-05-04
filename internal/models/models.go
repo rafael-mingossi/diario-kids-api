@@ -48,8 +48,8 @@ type Aluno struct {
 	DataNascimento time.Time `gorm:"type:date;not null"`
 
 	// Relação de Pertencimento: O aluno pertence a uma sala
-	SalaID uint
-	Sala   Sala
+	SalaID *uint
+	Sala   *Sala
 
 	// Relação de volta para os pais
 	Pais []Usuario `gorm:"many2many:aluno_pais;"`
