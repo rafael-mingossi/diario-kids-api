@@ -53,6 +53,10 @@ func (h *AlunoHandler) CriarAluno(w http.ResponseWriter, r *http.Request) {
 	//4. manda pro Service
 	resposta, err := h.service.CriarAluno(input)
 	if err != nil {
+		if errors.Is(err, services.ErrDataNascimentoInvalida) || errors.Is(err, services.ErrDataNascimentoFutura) {
+			http.Error(w, "data_nascimento inválida", http.StatusUnprocessableEntity)
+			return
+		}
 		//A: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal
 		slog.Error("Erro interno ao criar aluno", "detalhe", err)
 		http.Error(w, "Erro interno no servidor. Tente novamente mais tarde.", http.StatusInternalServerError)
