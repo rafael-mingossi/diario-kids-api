@@ -66,7 +66,7 @@ func main() {
 	usuarioService := services.NewUsuarioService(usuarioRepo)
 	authService := services.NewAuthService(usuarioRepo)
 	salaService := services.NewSalaService(salaRepo)
-	alunoService := services.NewAlunoService(alunoRepo)
+	alunoService := services.NewAlunoService(alunoRepo, salaRepo)
 
 	// 3. Handlers (Recepção HTTP)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)

@@ -53,8 +53,19 @@ func (h *AlunoHandler) CriarAluno(w http.ResponseWriter, r *http.Request) {
 	//4. manda pro Service
 	resposta, err := h.service.CriarAluno(input)
 	if err != nil {
-		if errors.Is(err, services.ErrDataNascimentoInvalida) || errors.Is(err, services.ErrDataNascimentoFutura) {
+		// Erros de domínio esperados viram 422. Não são falhas internas do servidor.
+		if errors.Is(err, services.ErrDataNascimentoInvalida) {
 			http.Error(w, "data_nascimento inválida", http.StatusUnprocessableEntity)
+			return
+		}
+		if errors.Is(err, services.ErrDataNascimentoFutura) {
+			http.Error(w, "data_nascimento não pode ser futura", http.StatusUnprocessableEntity)
+			return
+		}
+		if errors.Is(err, services.ErrSalaNaoEncontrada) {
+			// O cliente enviou um sala_id, mas essa sala não existe no banco.
+			// Isso é erro de entrada/negócio, não erro interno do servidor.
+			http.Error(w, "sala_id inválido", http.StatusUnprocessableEntity)
 			return
 		}
 		//A: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal

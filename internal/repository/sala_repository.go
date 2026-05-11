@@ -12,6 +12,7 @@ import (
 type SalaRepository interface {
 	Criar(sala *models.Sala) error
 	BuscarPorNomeENumero(nome string, numero string) (*models.Sala, error)
+	BuscarPorID(id uint) (*models.Sala, error)
 }
 
 // interface privada
@@ -46,6 +47,20 @@ func (r *salaRepository) BuscarPorNomeENumero(nome string, numero string) (*mode
 	// A regra de negócio diz que a combinação Nome + Numero identifica a sala.
 	// Exemplo: "Infantil 2" + "A" pode existir, mas outra "Infantil 2" + "A" não.
 	err := r.db.Where("nome = ? AND numero = ?", nome, numero).First(&sala).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // Não encontrou: não é erro fatal, só significa "sala ainda não existe"
+		}
+		return nil, err // Erro real de banco
+	}
+
+	return &sala, nil
+}
+
+func (r *salaRepository) BuscarPorID(id uint) (*models.Sala, error) {
+	var sala models.Sala
+
+	err := r.db.First(&sala, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil // Não encontrou: não é erro fatal, só significa "sala ainda não existe"

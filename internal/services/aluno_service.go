@@ -17,17 +17,20 @@ type AlunoService interface {
 
 // interface privada
 type alunoService struct {
-	repo repository.AlunoRepository
+	repo     repository.AlunoRepository
+	salaRepo repository.SalaRepository
 }
 
 // construtor devolve a interfaxe
-func NewAlunoService(repo repository.AlunoRepository) AlunoService {
-	return &alunoService{repo: repo}
+func NewAlunoService(repo repository.AlunoRepository, salaRepo repository.SalaRepository) AlunoService {
+	return &alunoService{repo: repo, salaRepo: salaRepo}
 }
 
-// Erros de domínio esperados: o handler usa errors.Is para transformar isso em 422.
+// Sentinels de domínio: representam falhas esperadas de regra/entrada.
+// O handler usa errors.Is para transformar esses casos em 422, sem tratar como 500.
 var ErrDataNascimentoInvalida = errors.New("data_nascimento inválida")
 var ErrDataNascimentoFutura = errors.New("data_nascimento não pode ser futura")
+var ErrSalaNaoEncontrada = errors.New("sala informada não existe")
 
 // service recebe o DTO de input, processa as regras de negocio e devolve o DTO de output
 func (s *alunoService) CriarAluno(input dto.CriarAlunoInput) (*dto.AlunoResponse, error) {
@@ -50,7 +53,20 @@ func (s *alunoService) CriarAluno(input dto.CriarAlunoInput) (*dto.AlunoResponse
 		return nil, ErrDataNascimentoFutura
 	}
 
-	// Com a data já convertida, o mapper só monta o model sem regra extra.
+	// SalaID é opcional no create inicial.
+	// Só consultamos o banco se o cliente realmente informou uma sala.
+	if input.SalaID != nil {
+		sala, err := s.salaRepo.BuscarPorID(*input.SalaID)
+		if err != nil {
+			return nil, fmt.Errorf("erro ao verificar sala: %w", err)
+		}
+		if sala == nil {
+			return nil, ErrSalaNaoEncontrada
+		}
+	}
+
+	// Com a data já validada e convertida, o mapper só monta o model sem regra extra.
+	// O service é responsável por regras de negócio e validação, mas o mapper é burro por design.
 	novoAluno := mappers.CriarAlunoInputToModel(input, dataNascimento)
 
 	//persiste model no banco
