@@ -16,4 +16,5 @@ type AlunoResponse struct {
 	Nome           string `json:"nome"`
 	DataNascimento string `json:"data_nascimento"`
 	SalaID         *uint  `json:"sala_id,omitempty"`
+	Matricula      string `json:"matricula"`
 }

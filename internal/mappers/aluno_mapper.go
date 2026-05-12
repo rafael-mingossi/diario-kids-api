@@ -26,5 +26,6 @@ func ModelToAlunoResponse(a models.Aluno) dto.AlunoResponse {
 		Nome:           a.Nome,
 		DataNascimento: a.DataNascimento.Format("02/01/2006"),
 		SalaID:         a.SalaID,
+		Matricula:      a.Matricula,
 	}
 }

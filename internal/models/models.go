@@ -46,6 +46,7 @@ type Aluno struct {
 	Nome string `gorm:"not null"`
 	// NOVIDADE: Alterado de string para time.Time
 	DataNascimento time.Time `gorm:"type:date;not null"`
+	Matricula      string    `gorm:"not null;unique"`
 
 	// Relação de Pertencimento: O aluno pertence a uma sala
 	SalaID *uint
