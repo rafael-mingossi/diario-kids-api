@@ -14,19 +14,29 @@ type SalaService interface {
 }
 
 type salaService struct {
-	repo repository.SalaRepository
+	repo       repository.SalaRepository
+	escolaRepo repository.EscolaRepository
 }
 
-func NewSalaService(repo repository.SalaRepository) SalaService {
-	return &salaService{repo: repo}
+func NewSalaService(repo repository.SalaRepository, escolaRepo repository.EscolaRepository) SalaService {
+	return &salaService{repo: repo, escolaRepo: escolaRepo}
 }
 
 // erro customizado para o Handler saber quando é conflito
 var ErrSalaDuplicada = errors.New("esta sala já existe")
 
 func (s *salaService) CriarSala(input dto.CriarSalaInput) (dto.SalaResponse, error) {
+	// Antes de criar uma sala, validamos se a unidade organizacional existe.
+	escola, err := s.escolaRepo.BuscarPorID(input.EscolaID)
+	if err != nil {
+		return dto.SalaResponse{}, fmt.Errorf("erro ao verificar escola: %w", err)
+	}
+	if escola == nil {
+		return dto.SalaResponse{}, ErrEscolaNaoEncontrada
+	}
+
 	// 1. Verificar se a sala já existe (por nome e número)
-	salaExistente, err := s.repo.BuscarPorNomeENumero(input.Nome, input.Numero)
+	salaExistente, err := s.repo.BuscarPorNomeENumero(input.EscolaID, input.Nome, input.Numero)
 	if err != nil {
 		// Embrulhamos o erro com contexto para facilitar depuração nos logs.
 		// %w permite que errors.Is() continue funcionando na cadeia de chamadas.

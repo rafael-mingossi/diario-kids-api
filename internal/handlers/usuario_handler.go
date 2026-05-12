@@ -45,16 +45,16 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "corpo da requisição muito grande", http.StatusRequestEntityTooLarge)
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "corpo da requisição muito grande")
 			return
 		}
-		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "JSON mal formatado")
 		return
 	}
 
 	// 2. Valida o input automaticamente usando as tags do DTO
 	if err := h.validate.Struct(input); err != nil {
-		http.Error(w, "Dados de entrada inválidos (verifique email, tamanho da senha, etc)", http.StatusUnprocessableEntity)
+		writeJSONError(w, http.StatusUnprocessableEntity, "dados de entrada inválidos")
 		return
 	}
 
@@ -63,13 +63,13 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Feedback 2: Tratamos o erro específico de conflito (HTTP 409)
 		if errors.Is(err, services.ErrEmailEmUso) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			writeJSONError(w, http.StatusConflict, err.Error())
 			return
 		}
 
 		// Feedback 1: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal
 		slog.Error("Erro interno ao criar usuário", "detalhe", err)
-		http.Error(w, "Erro interno no servidor. Tente novamente mais tarde.", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	corpo, err := json.Marshal(resposta)
 	if err != nil {
 		slog.Error("erro ao serializar resposta de criação de usuário", "detalhe", err)
-		http.Error(w, "erro interno no servidor", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 

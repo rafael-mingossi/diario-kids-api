@@ -59,18 +59,21 @@ func main() {
 
 	// 1. Repositórios (Acesso a dados)
 	usuarioRepo := repository.NewUsuarioRepository(db)
+	escolaRepo := repository.NewEscolaRepository(db)
 	salaRepo := repository.NewSalaRepository(db)
 	alunoRepo := repository.NewAlunoRepository(db)
 
 	// 2. Serviços (Regras de negócio)
 	usuarioService := services.NewUsuarioService(usuarioRepo)
 	authService := services.NewAuthService(usuarioRepo)
-	salaService := services.NewSalaService(salaRepo)
-	alunoService := services.NewAlunoService(alunoRepo, salaRepo)
+	escolaService := services.NewEscolaService(escolaRepo)
+	salaService := services.NewSalaService(salaRepo, escolaRepo)
+	alunoService := services.NewAlunoService(alunoRepo, salaRepo, escolaRepo)
 
 	// 3. Handlers (Recepção HTTP)
 	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
 	authHandler := handlers.NewAuthHandler(authService)
+	escolaHandler := handlers.NewEscolaHandler(escolaService)
 	salaHandler := handlers.NewSalaHandler(salaService)
 	alunoHandler := handlers.NewAlunoHandler(alunoService)
 
@@ -130,6 +133,9 @@ func main() {
 		// Aplicamos o middleware de verificação JWT a todas as rotas deste grupo.
 		// Passamos o secret lido do ambiente — injeção de dependência, não global.
 		r.Use(authmiddleware.Verificar(jwtSecret))
+
+		// Escola/Unidade — primeiro tijolo da fundação multi-escola.
+		r.Post("/api/escolas", escolaHandler.CriarEscola)
 
 		// Sala — apenas usuários autenticados podem criar salas
 		r.Post("/api/salas", salaHandler.CriarSala)

@@ -9,7 +9,9 @@ import (
 
 // CriarSalaInputToModel converte um DTO de entrada em um Model pronto para persistência.
 func CriarSalaInputToModel(input dto.CriarSalaInput) models.Sala {
+	escolaID := input.EscolaID
 	return models.Sala{
+		EscolaID:    &escolaID,
 		Nome:        input.Nome,
 		Numero:      input.Numero,
 		ProfessorID: input.ProfessorID,
@@ -20,6 +22,7 @@ func CriarSalaInputToModel(input dto.CriarSalaInput) models.Sala {
 func ModelToSalaResponse(s models.Sala) dto.SalaResponse {
 	return dto.SalaResponse{
 		ID:          s.ID, // ID gerado pelo banco apos o INSERT
+		EscolaID:    s.EscolaID,
 		Nome:        s.Nome,
 		Numero:      s.Numero,
 		ProfessorID: s.ProfessorID,

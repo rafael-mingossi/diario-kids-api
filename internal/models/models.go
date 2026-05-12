@@ -20,16 +20,43 @@ type Usuario struct {
 	Alunos []Aluno `gorm:"many2many:aluno_pais;"`
 }
 
+// Escola representa uma unidade organizacional do sistema.
+// A mesma tabela serve tanto para matriz quanto para filial.
+// Quando IsMatriz=true, MatrizID fica nil.
+// Quando IsMatriz=false, MatrizID aponta para a escola matriz dona da filial.
+type Escola struct {
+	gorm.Model
+	CNPJ         string `gorm:"uniqueIndex;not null"`
+	RazaoSocial  string `gorm:"not null"`
+	NomeFantasia string `gorm:"not null"`
+	IsMatriz     bool   `gorm:"not null;default:false"`
+
+	MatrizID *uint
+	Matriz   *Escola  `gorm:"foreignKey:MatrizID"`
+	Filiais  []Escola `gorm:"foreignKey:MatrizID"`
+
+	// Relações operacionais futuras já nascem escopadas por unidade.
+	Salas  []Sala
+	Alunos []Aluno
+}
+
 // Sala representa o Berçário, Infantil 1, etc.
 type Sala struct {
 	gorm.Model
+	// Transitional note:
+	// já existem salas legadas no banco sem escola associada.
+	// Por isso o campo fica nullable no schema por enquanto, para a migration não falhar.
+	// A API continua exigindo escola_id nos novos cadastros via DTO + service.
+	EscolaID *uint   `gorm:"uniqueIndex:idx_sala_escola_nome_numero"`
+	Escola   *Escola `gorm:"foreignKey:EscolaID"`
+
 	// Nome pode se repetir entre salas diferentes.
-	// A unicidade real da sala será a combinação Nome + Numero.
-	Nome string `gorm:"not null;uniqueIndex:idx_sala_nome_numero"`
+	// A unicidade real da sala passa a ser EscolaID + Nome + Numero.
+	Nome string `gorm:"not null;uniqueIndex:idx_sala_escola_nome_numero"`
 
 	// Numero identifica a turma/sala dentro do mesmo Nome.
 	// Exemplos válidos de negócio: "1", "2", "A", "B".
-	Numero string `gorm:"not null;uniqueIndex:idx_sala_nome_numero"`
+	Numero string `gorm:"not null;uniqueIndex:idx_sala_escola_nome_numero"`
 
 	// Professor é opcional no momento da criação da sala.
 	// Usamos *uint para representar ausência real (nil), em vez de 0.
@@ -43,6 +70,13 @@ type Sala struct {
 // Aluno representa as crianças
 type Aluno struct {
 	gorm.Model
+	// Transitional note:
+	// existem alunos legados sem escola associada no banco atual.
+	// Mantemos nullable no schema para permitir a migration, mas a API exige escola_id
+	// para qualquer novo aluno criado a partir desta fase.
+	EscolaID *uint   `gorm:"index"`
+	Escola   *Escola `gorm:"foreignKey:EscolaID"`
+
 	Nome string `gorm:"not null"`
 	// NOVIDADE: Alterado de string para time.Time
 	DataNascimento time.Time `gorm:"type:date;not null"`

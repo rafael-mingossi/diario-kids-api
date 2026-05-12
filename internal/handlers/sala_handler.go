@@ -36,16 +36,16 @@ func (h *SalaHandler) CriarSala(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "corpo da requisição muito grande", http.StatusRequestEntityTooLarge)
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "corpo da requisição muito grande")
 			return
 		}
-		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "JSON mal formatado")
 		return
 	}
 
 	// 3. Valida os campos usando as tags do DTO (required, etc.)
 	if err := h.validate.Struct(input); err != nil {
-		http.Error(w, "dados de entrada inválidos", http.StatusUnprocessableEntity)
+		writeJSONError(w, http.StatusUnprocessableEntity, "dados de entrada inválidos")
 		return
 	}
 
@@ -53,7 +53,11 @@ func (h *SalaHandler) CriarSala(w http.ResponseWriter, r *http.Request) {
 	resposta, err := h.service.CriarSala(input)
 	if err != nil {
 		if errors.Is(err, services.ErrSalaDuplicada) {
-			http.Error(w, "esta sala já existe", http.StatusConflict)
+			writeJSONError(w, http.StatusConflict, "esta sala já existe")
+			return
+		}
+		if errors.Is(err, services.ErrEscolaNaoEncontrada) {
+			writeJSONError(w, http.StatusUnprocessableEntity, "escola_id inválido")
 			return
 		}
 		// Erro interno inesperado: logamos o detalhe no servidor, nunca no cliente.
@@ -62,7 +66,7 @@ func (h *SalaHandler) CriarSala(w http.ResponseWriter, r *http.Request) {
 			"ip", r.RemoteAddr,
 			"detalhe", err,
 		)
-		http.Error(w, "erro interno do servidor", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno do servidor")
 		return
 	}
 
@@ -72,7 +76,7 @@ func (h *SalaHandler) CriarSala(w http.ResponseWriter, r *http.Request) {
 	corpo, err := json.Marshal(resposta)
 	if err != nil {
 		slog.Error("erro ao serializar resposta de sala", "detalhe", err)
-		http.Error(w, "erro interno do servidor", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno do servidor")
 		return
 	}
 

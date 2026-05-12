@@ -37,16 +37,16 @@ func (h *AlunoHandler) CriarAluno(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "corpo da requisição muito grande", http.StatusRequestEntityTooLarge)
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "corpo da requisição muito grande")
 			return
 		}
-		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "JSON mal formatado")
 		return
 	}
 
 	//3. valida o input usando DTO tags
 	if err := h.validate.Struct(input); err != nil {
-		http.Error(w, "dados de entrada inválidos", http.StatusUnprocessableEntity)
+		writeJSONError(w, http.StatusUnprocessableEntity, "dados de entrada inválidos")
 		return
 	}
 
@@ -55,22 +55,30 @@ func (h *AlunoHandler) CriarAluno(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Erros de domínio esperados viram 422. Não são falhas internas do servidor.
 		if errors.Is(err, services.ErrDataNascimentoInvalida) {
-			http.Error(w, "data_nascimento inválida", http.StatusUnprocessableEntity)
+			writeJSONError(w, http.StatusUnprocessableEntity, "data_nascimento inválida")
 			return
 		}
 		if errors.Is(err, services.ErrDataNascimentoFutura) {
-			http.Error(w, "data_nascimento não pode ser futura", http.StatusUnprocessableEntity)
+			writeJSONError(w, http.StatusUnprocessableEntity, "data_nascimento não pode ser futura")
 			return
 		}
 		if errors.Is(err, services.ErrSalaNaoEncontrada) {
 			// O cliente enviou um sala_id, mas essa sala não existe no banco.
 			// Isso é erro de entrada/negócio, não erro interno do servidor.
-			http.Error(w, "sala_id inválido", http.StatusUnprocessableEntity)
+			writeJSONError(w, http.StatusUnprocessableEntity, "sala_id inválido")
+			return
+		}
+		if errors.Is(err, services.ErrEscolaNaoEncontrada) {
+			writeJSONError(w, http.StatusUnprocessableEntity, "escola_id inválido")
+			return
+		}
+		if errors.Is(err, services.ErrSalaNaoPertenceAEscola) {
+			writeJSONError(w, http.StatusUnprocessableEntity, "sala_id não pertence à escola informada")
 			return
 		}
 		//A: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal
 		slog.Error("Erro interno ao criar aluno", "detalhe", err)
-		http.Error(w, "Erro interno no servidor. Tente novamente mais tarde.", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 
@@ -78,7 +86,7 @@ func (h *AlunoHandler) CriarAluno(w http.ResponseWriter, r *http.Request) {
 	corpo, err := json.Marshal(resposta)
 	if err != nil {
 		slog.Error("Erro ao serializar resposta", "detalhe", err)
-		http.Error(w, "Erro interno no servidor. Tente novamente mais tarde.", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 

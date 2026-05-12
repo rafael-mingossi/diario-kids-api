@@ -41,16 +41,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		// Diferenciamos o erro de payload muito grande (413) do erro de JSON inválido (400)
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "corpo da requisição muito grande", http.StatusRequestEntityTooLarge)
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "corpo da requisição muito grande")
 			return
 		}
-		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "JSON mal formatado")
 		return
 	}
 
 	// 2. Valida os campos usando as tags do DTO (required, email, min=6, etc.)
 	if err := h.validate.Struct(input); err != nil {
-		http.Error(w, "dados de entrada inválidos", http.StatusUnprocessableEntity)
+		writeJSONError(w, http.StatusUnprocessableEntity, "dados de entrada inválidos")
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		// → 401 Unauthorized. A mensagem genérica é intencional: nunca revelamos
 		//   ao cliente QUAL das duas informações estava errada.
 		if errors.Is(err, services.ErrCredenciaisInvalidas) {
-			http.Error(w, "credenciais inválidas", http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, "credenciais inválidas")
 			return
 		}
 
@@ -77,7 +77,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			"ip", r.RemoteAddr,
 			"detalhe", err, // O detalhe real fica APENAS nos logs do servidor
 		)
-		http.Error(w, "erro interno no servidor", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	corpo, err := json.Marshal(resposta)
 	if err != nil {
 		slog.Error("erro ao serializar resposta de login", "detalhe", err)
-		http.Error(w, "erro interno no servidor", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 

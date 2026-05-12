@@ -5,6 +5,7 @@ package dto
 
 // receber do Frontend
 type CriarSalaInput struct {
+	EscolaID    uint   `json:"escola_id" validate:"required"`
 	Nome        string `json:"nome" validate:"required,min=3"`
 	Numero      string `json:"numero" validate:"required"`
 	ProfessorID *uint  `json:"professor_id,omitempty"`
@@ -13,6 +14,7 @@ type CriarSalaInput struct {
 // devolver para o Frontend
 type SalaResponse struct {
 	ID          uint   `json:"id"`
+	EscolaID    *uint  `json:"escola_id,omitempty"`
 	Nome        string `json:"nome"`
 	Numero      string `json:"numero"`
 	ProfessorID *uint  `json:"professor_id,omitempty"`

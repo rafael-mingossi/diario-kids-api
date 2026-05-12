@@ -18,13 +18,14 @@ type AlunoService interface {
 
 // interface privada
 type alunoService struct {
-	repo     repository.AlunoRepository
-	salaRepo repository.SalaRepository
+	repo       repository.AlunoRepository
+	salaRepo   repository.SalaRepository
+	escolaRepo repository.EscolaRepository
 }
 
 // construtor devolve a interfaxe
-func NewAlunoService(repo repository.AlunoRepository, salaRepo repository.SalaRepository) AlunoService {
-	return &alunoService{repo: repo, salaRepo: salaRepo}
+func NewAlunoService(repo repository.AlunoRepository, salaRepo repository.SalaRepository, escolaRepo repository.EscolaRepository) AlunoService {
+	return &alunoService{repo: repo, salaRepo: salaRepo, escolaRepo: escolaRepo}
 }
 
 // Sentinels de domínio: representam falhas esperadas de regra/entrada.
@@ -32,6 +33,7 @@ func NewAlunoService(repo repository.AlunoRepository, salaRepo repository.SalaRe
 var ErrDataNascimentoInvalida = errors.New("data_nascimento inválida")
 var ErrDataNascimentoFutura = errors.New("data_nascimento não pode ser futura")
 var ErrSalaNaoEncontrada = errors.New("sala informada não existe")
+var ErrSalaNaoPertenceAEscola = errors.New("sala informada não pertence à escola")
 
 const alfabetoMatricula = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -84,6 +86,15 @@ func (s *alunoService) CriarAluno(input dto.CriarAlunoInput) (*dto.AlunoResponse
 		return nil, ErrDataNascimentoFutura
 	}
 
+	// EscolaID é obrigatório para manter o isolamento entre escolas/filiais.
+	escola, err := s.escolaRepo.BuscarPorID(input.EscolaID)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao verificar escola: %w", err)
+	}
+	if escola == nil {
+		return nil, ErrEscolaNaoEncontrada
+	}
+
 	// SalaID é opcional no create inicial.
 	// Só consultamos o banco se o cliente realmente informou uma sala.
 	if input.SalaID != nil {
@@ -93,6 +104,12 @@ func (s *alunoService) CriarAluno(input dto.CriarAlunoInput) (*dto.AlunoResponse
 		}
 		if sala == nil {
 			return nil, ErrSalaNaoEncontrada
+		}
+		// Sala e aluno precisam pertencer à mesma unidade.
+		// Como EscolaID no model está nullable por compatibilidade com dados legados,
+		// validamos também o caso de a sala antiga ainda não ter escola associada.
+		if sala.EscolaID == nil || *sala.EscolaID != input.EscolaID {
+			return nil, ErrSalaNaoPertenceAEscola
 		}
 	}
 
