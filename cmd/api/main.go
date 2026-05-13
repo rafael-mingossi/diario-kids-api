@@ -59,21 +59,29 @@ func main() {
 
 	// 1. Repositórios (Acesso a dados)
 	usuarioRepo := repository.NewUsuarioRepository(db)
+	usuarioEscolaRepo := repository.NewUsuarioEscolaRepository(db)
+	auditLogRepo := repository.NewAuditLogRepository(db)
+	clienteRepo := repository.NewClienteRepository(db)
 	escolaRepo := repository.NewEscolaRepository(db)
 	salaRepo := repository.NewSalaRepository(db)
 	alunoRepo := repository.NewAlunoRepository(db)
 
 	// 2. Serviços (Regras de negócio)
-	usuarioService := services.NewUsuarioService(usuarioRepo)
-	authService := services.NewAuthService(usuarioRepo)
-	escolaService := services.NewEscolaService(escolaRepo)
+	setupService := services.NewSetupService(db)
+	auditService := services.NewAuditService(auditLogRepo)
+	clienteService := services.NewClienteService(clienteRepo)
+	usuarioService := services.NewUsuarioService(usuarioRepo, escolaRepo, usuarioEscolaRepo)
+	authService := services.NewAuthService(usuarioRepo, usuarioEscolaRepo)
+	escolaService := services.NewEscolaService(escolaRepo, clienteRepo)
 	salaService := services.NewSalaService(salaRepo, escolaRepo)
 	alunoService := services.NewAlunoService(alunoRepo, salaRepo, escolaRepo)
 
 	// 3. Handlers (Recepção HTTP)
-	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
+	setupHandler := handlers.NewSetupHandler(setupService, auditService)
+	clienteHandler := handlers.NewClienteHandler(clienteService, auditService)
+	usuarioHandler := handlers.NewUsuarioHandler(usuarioService, auditService)
 	authHandler := handlers.NewAuthHandler(authService)
-	escolaHandler := handlers.NewEscolaHandler(escolaService)
+	escolaHandler := handlers.NewEscolaHandler(escolaService, auditService)
 	salaHandler := handlers.NewSalaHandler(salaService)
 	alunoHandler := handlers.NewAlunoHandler(alunoService)
 
@@ -100,9 +108,7 @@ func main() {
 
 	// Health check — sempre acessível
 	r.Get("/api/status", handlers.StatusHandler)
-
-	// Registro de novo usuário — público para permitir o cadastro inicial
-	r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
+	r.Post("/api/setup-inicial", setupHandler.SetupInicial)
 
 	// Login com rate limiting por IP.
 	//
@@ -134,8 +140,19 @@ func main() {
 		// Passamos o secret lido do ambiente — injeção de dependência, não global.
 		r.Use(authmiddleware.Verificar(jwtSecret))
 
-		// Escola/Unidade — primeiro tijolo da fundação multi-escola.
-		r.Post("/api/escolas", escolaHandler.CriarEscola)
+		// Rotas globais da plataforma: provisionam novas contas clientes.
+		r.Group(func(r chi.Router) {
+			r.Use(authmiddleware.ApenasPlatformAdmin())
+
+			// Cliente representa a conta comercial do SaaS.
+			r.Post("/api/clientes", clienteHandler.CriarCliente)
+
+			// Escola/Unidade nasce a partir da operação da plataforma.
+			r.Post("/api/escolas", escolaHandler.CriarEscola)
+
+			// O primeiro usuário da escola também nasce a partir da plataforma.
+			r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
+		})
 
 		// Sala — apenas usuários autenticados podem criar salas
 		r.Post("/api/salas", salaHandler.CriarSala)

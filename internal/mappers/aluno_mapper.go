@@ -11,9 +11,8 @@ import (
 // Repare que o mapper recebe a data já convertida para time.Time.
 // O parse da string NÃO acontece aqui; essa decisão fica no service.
 func CriarAlunoInputToModel(input dto.CriarAlunoInput, dataNascimento time.Time) models.Aluno {
-	escolaID := input.EscolaID
 	return models.Aluno{
-		EscolaID:       &escolaID,
+		EscolaID:       input.EscolaID,
 		Nome:           input.Nome,
 		DataNascimento: dataNascimento,
 		SalaID:         input.SalaID,

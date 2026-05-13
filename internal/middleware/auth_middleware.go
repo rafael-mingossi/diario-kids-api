@@ -8,6 +8,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -38,9 +39,11 @@ const ContextKeyUsuario contextKey = "usuario"
 //
 // Analogia JS: é o objeto que você coloca em `req.user = { id, email, role }` no Express.
 type UsuarioAutenticado struct {
-	ID    string // ID do banco de dados (string porque foi armazenado no campo Subject do JWT)
-	Email string
-	Role  string
+	ID           string // ID do banco de dados (string porque foi armazenado no campo Subject do JWT)
+	Email        string
+	Role         string
+	EscolaID     *uint
+	PlatformRole string
 }
 
 // UsuarioClaims define o formato esperado do payload do JWT durante a validação.
@@ -49,9 +52,47 @@ type UsuarioAutenticado struct {
 // jwt.RegisteredClaims inclui os campos padrão do protocolo:
 // sub, iat, exp — que a biblioteca verifica automaticamente.
 type UsuarioClaims struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email        string `json:"email"`
+	Role         string `json:"role,omitempty"`
+	EscolaID     *uint  `json:"escola_id,omitempty"`
+	PlatformRole string `json:"platform_role,omitempty"`
 	jwt.RegisteredClaims
+}
+
+type authErrorResponse struct {
+	Error  string `json:"error"`
+	Status int    `json:"status"`
+}
+
+func writeAuthJSONError(w http.ResponseWriter, status int, message string) {
+	corpo, err := json.Marshal(authErrorResponse{Error: message, Status: status})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(corpo) //nolint:errcheck
+}
+
+func ApenasPlatformAdmin() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			usuario, ok := r.Context().Value(ContextKeyUsuario).(UsuarioAutenticado)
+			if !ok {
+				writeAuthJSONError(w, http.StatusUnauthorized, "usuário autenticado ausente no contexto")
+				return
+			}
+
+			if usuario.PlatformRole != "platform_admin" {
+				writeAuthJSONError(w, http.StatusForbidden, "acesso restrito ao administrador da plataforma")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // Verificar retorna um middleware que valida o JWT de cada requisição.
@@ -71,7 +112,7 @@ func Verificar(secret string) func(http.Handler) http.Handler {
 			// O cliente deve enviar: Authorization: Bearer eyJhbGci...
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				http.Error(w, "token de autenticação ausente", http.StatusUnauthorized)
+				writeAuthJSONError(w, http.StatusUnauthorized, "token de autenticação ausente")
 				return
 			}
 
@@ -79,7 +120,7 @@ func Verificar(secret string) func(http.Handler) http.Handler {
 			// SplitN com limite 2 evita problemas se o token contiver espaços acidentais
 			partes := strings.SplitN(authHeader, " ", 2)
 			if len(partes) != 2 || partes[0] != "Bearer" {
-				http.Error(w, "formato inválido (esperado: Bearer <token>)", http.StatusUnauthorized)
+				writeAuthJSONError(w, http.StatusUnauthorized, "formato inválido (esperado: Bearer <token>)")
 				return
 			}
 
@@ -114,7 +155,7 @@ func Verificar(secret string) func(http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"erro", err,
 				)
-				http.Error(w, "token inválido ou expirado", http.StatusUnauthorized)
+				writeAuthJSONError(w, http.StatusUnauthorized, "token inválido ou expirado")
 				return
 			}
 
@@ -122,7 +163,7 @@ func Verificar(secret string) func(http.Handler) http.Handler {
 			// O ok verifica se a conversão de tipo foi bem-sucedida.
 			claims, ok := token.Claims.(*UsuarioClaims)
 			if !ok {
-				http.Error(w, "token inválido", http.StatusUnauthorized)
+				writeAuthJSONError(w, http.StatusUnauthorized, "token inválido")
 				return
 			}
 
@@ -131,9 +172,11 @@ func Verificar(secret string) func(http.Handler) http.Handler {
 			// Analogia JS: é o `req.user = { id, email, role }` do Express — a partir
 			// daqui, qualquer handler downstream pode acessar o usuário autenticado.
 			ctx := context.WithValue(r.Context(), ContextKeyUsuario, UsuarioAutenticado{
-				ID:    claims.Subject, // Subject = ID do usuário (definido em gerarJWT)
-				Email: claims.Email,
-				Role:  claims.Role,
+				ID:           claims.Subject, // Subject = ID do usuário (definido em gerarJWT)
+				Email:        claims.Email,
+				Role:         claims.Role,
+				EscolaID:     claims.EscolaID,
+				PlatformRole: claims.PlatformRole,
 			})
 
 			// Passo 6: Chamamos o próximo handler com o contexto enriquecido.

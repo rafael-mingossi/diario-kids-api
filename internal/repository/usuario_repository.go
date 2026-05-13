@@ -13,6 +13,7 @@ import (
 type UsuarioRepository interface {
 	Criar(usuario *models.Usuario) error
 	BuscarPorEmail(email string) (*models.Usuario, error)
+	BuscarPorID(id uint) (*models.Usuario, error)
 }
 
 // 2. A Implementação Privada
@@ -63,4 +64,16 @@ func (r *usuarioRepository) BuscarPorEmail(email string) (*models.Usuario, error
 
 	return &usuario, nil
 	//ou retornar nil, nil se o email não for encontrado
+}
+
+func (r *usuarioRepository) BuscarPorID(id uint) (*models.Usuario, error) {
+	var usuario models.Usuario
+	err := r.db.First(&usuario, id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &usuario, nil
 }

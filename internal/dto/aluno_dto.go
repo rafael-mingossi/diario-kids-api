@@ -14,7 +14,7 @@ type CriarAlunoInput struct {
 
 type AlunoResponse struct {
 	ID             uint   `json:"id"`
-	EscolaID       *uint  `json:"escola_id,omitempty"`
+	EscolaID       uint   `json:"escola_id"`
 	Nome           string `json:"nome"`
 	DataNascimento string `json:"data_nascimento"`
 	SalaID         *uint  `json:"sala_id,omitempty"`

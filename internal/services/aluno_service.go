@@ -106,9 +106,7 @@ func (s *alunoService) CriarAluno(input dto.CriarAlunoInput) (*dto.AlunoResponse
 			return nil, ErrSalaNaoEncontrada
 		}
 		// Sala e aluno precisam pertencer à mesma unidade.
-		// Como EscolaID no model está nullable por compatibilidade com dados legados,
-		// validamos também o caso de a sala antiga ainda não ter escola associada.
-		if sala.EscolaID == nil || *sala.EscolaID != input.EscolaID {
+		if sala.EscolaID != input.EscolaID {
 			return nil, ErrSalaNaoPertenceAEscola
 		}
 	}

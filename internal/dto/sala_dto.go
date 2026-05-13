@@ -14,7 +14,7 @@ type CriarSalaInput struct {
 // devolver para o Frontend
 type SalaResponse struct {
 	ID          uint   `json:"id"`
-	EscolaID    *uint  `json:"escola_id,omitempty"`
+	EscolaID    uint   `json:"escola_id"`
 	Nome        string `json:"nome"`
 	Numero      string `json:"numero"`
 	ProfessorID *uint  `json:"professor_id,omitempty"`

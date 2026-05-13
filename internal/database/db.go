@@ -77,7 +77,7 @@ func ConnectDB() (*gorm.DB, error) {
 
 	// 4. MIGRATIONS: O AutoMigrate olha os moldes do pacote 'models' e cria as tabelas no Postgres!
 	slog.Info("🛠️  Verificando e sincronizando tabelas...")
-	err = db.AutoMigrate(&models.Usuario{}, &models.Escola{}, &models.Sala{}, &models.Aluno{})
+	err = db.AutoMigrate(&models.Usuario{}, &models.Cliente{}, &models.Escola{}, &models.UsuarioEscola{}, &models.Sala{}, &models.Aluno{}, &models.AuditLog{})
 	if err != nil {
 		return nil, fmt.Errorf("erro durante as migrations: %w", err)
 	}

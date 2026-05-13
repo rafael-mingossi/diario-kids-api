@@ -30,3 +30,9 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.WriteHeader(status)
 	w.Write(corpo) //nolint:errcheck // Erro de escrita após WriteHeader não é acionável
 }
+
+// WriteJSONAuthError é exportado para o middleware porque middlewares vivem em outro pacote.
+// Mantemos a implementação centralizada aqui para toda a API usar o mesmo formato de erro.
+func WriteJSONAuthError(w http.ResponseWriter, status int, message string) {
+	writeJSONError(w, status, message)
+}

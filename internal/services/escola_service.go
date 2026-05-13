@@ -14,22 +14,33 @@ type EscolaService interface {
 }
 
 type escolaService struct {
-	repo repository.EscolaRepository
+	repo        repository.EscolaRepository
+	clienteRepo repository.ClienteRepository
 }
 
-func NewEscolaService(repo repository.EscolaRepository) EscolaService {
-	return &escolaService{repo: repo}
+func NewEscolaService(repo repository.EscolaRepository, clienteRepo repository.ClienteRepository) EscolaService {
+	return &escolaService{repo: repo, clienteRepo: clienteRepo}
 }
 
 // Sentinels compartilhadas neste pacote.
 // `ErrEscolaNaoEncontrada` também será reutilizada por Sala e Aluno para classificar 422.
 var ErrEscolaDuplicada = errors.New("escola já existe")
 var ErrEscolaNaoEncontrada = errors.New("escola não encontrada")
+var ErrClienteDaEscolaNaoEncontrado = errors.New("cliente da escola não encontrado")
 var ErrMatrizObrigatoria = errors.New("filial precisa informar matriz_id")
 var ErrMatrizInvalida = errors.New("matriz informada é inválida")
 var ErrMatrizNaoPodeTerMatriz = errors.New("escola matriz não pode informar matriz_id")
+var ErrMatrizDeOutroCliente = errors.New("matriz informada pertence a outro cliente")
 
 func (s *escolaService) CriarEscola(input dto.CriarEscolaInput) (dto.EscolaResponse, error) {
+	cliente, err := s.clienteRepo.BuscarPorID(input.ClienteID)
+	if err != nil {
+		return dto.EscolaResponse{}, fmt.Errorf("erro ao verificar cliente da escola: %w", err)
+	}
+	if cliente == nil {
+		return dto.EscolaResponse{}, ErrClienteDaEscolaNaoEncontrado
+	}
+
 	// CNPJ é o identificador de negócio mais forte da escola/unidade.
 	escolaExistente, err := s.repo.BuscarPorCNPJ(input.CNPJ)
 	if err != nil {
@@ -57,6 +68,9 @@ func (s *escolaService) CriarEscola(input dto.CriarEscolaInput) (dto.EscolaRespo
 		}
 		if matriz == nil || !matriz.IsMatriz {
 			return dto.EscolaResponse{}, ErrMatrizInvalida
+		}
+		if matriz.ClienteID != input.ClienteID {
+			return dto.EscolaResponse{}, ErrMatrizDeOutroCliente
 		}
 	}
 

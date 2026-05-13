@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/rafael-mingossi/diario-kids-api/internal/dto"
@@ -14,6 +15,7 @@ import (
 type UsuarioHandler struct {
 	// NOVIDADE: Agora usamos a Interface (sem o asterisco *)
 	service  services.UsuarioService
+	audit    services.AuditService
 	validate *validator.Validate
 }
 
@@ -24,10 +26,11 @@ type UsuarioHandler struct {
 // O * no retorno significa "Aviso: quem chamar essa função vai receber um endereço, não a struct inteira".
 // Se a função retornasse apenas UsuarioHandler (sem *), ela criaria o objeto e entregaria uma cópia pesada para quem a chamou.
 // Retornando o ponteiro, você passa o objeto recém-criado adiante de forma super leve.
-func NewUsuarioHandler(service services.UsuarioService) *UsuarioHandler {
+func NewUsuarioHandler(service services.UsuarioService, audit services.AuditService) *UsuarioHandler {
 	// O & comercial significa "Crie isso na memória e me dê o endereço de onde ficou"
 	return &UsuarioHandler{
 		service:  service,
+		audit:    audit,
 		validate: validator.New(),
 	}
 }
@@ -72,6 +75,21 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
+
+	actorUserID, actorPlatformRole, actorSchoolRole, actorEscolaID := actorFromRequest(r)
+	targetEscolaID := input.EscolaID
+	registrarAuditoriaBestEffort(h.audit, r, services.AuditLogInput{
+		ActorUserID:       actorUserID,
+		ActorPlatformRole: actorPlatformRole,
+		ActorSchoolRole:   actorSchoolRole,
+		ActorEscolaID:     actorEscolaID,
+		TargetEscolaID:    &targetEscolaID,
+		Action:            "create",
+		EntityType:        "usuario",
+		EntityID:          strconv.FormatUint(uint64(resposta.ID), 10),
+		Origin:            "api",
+		After:             resposta,
+	})
 
 	// 4. Serializamos a resposta ANTES de escrever qualquer header.
 	// Mesmo padrão do auth_handler: se o Marshal falhar, ainda podemos retornar 500.

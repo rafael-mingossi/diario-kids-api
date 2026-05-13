@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time" //pacote nativo do Go para lidar com datas e horas
 
 	"gorm.io/gorm"
@@ -13,11 +14,30 @@ type Usuario struct {
 	Nome      string
 	Email     string `gorm:"uniqueIndex;not null"` // Garante que o email não se repita
 	SenhaHash string `gorm:"not null"`
-	Role      string `gorm:"not null"`
+	// PlatformRole representa permissões globais do SaaS e não substitui
+	// os papéis operacionais da escola.
+	PlatformRole string `gorm:"index"`
+
+	UsuarioEscolas []UsuarioEscola
 
 	// Relação Múltipla: Um pai tem vários alunos, um aluno tem vários pais.
 	// O GORM vai criar a tabela 'aluno_pais' sozinho por causa dessa tag 'many2many'
 	Alunos []Aluno `gorm:"many2many:aluno_pais;"`
+}
+
+// Cliente representa a conta comercial do SaaS.
+// É aqui que vivem dados contratuais, de cobrança e status da conta.
+// Um cliente pode ter uma ou várias unidades operacionais (Escolas).
+type Cliente struct {
+	gorm.Model
+	Nome            string `gorm:"not null"`
+	Documento       string `gorm:"uniqueIndex;not null"`
+	EmailFinanceiro string
+	Telefone        string
+	Status          string `gorm:"not null;default:ativo"`
+	Plano           string `gorm:"not null;default:basico"`
+
+	Escolas []Escola
 }
 
 // Escola representa uma unidade organizacional do sistema.
@@ -26,28 +46,43 @@ type Usuario struct {
 // Quando IsMatriz=false, MatrizID aponta para a escola matriz dona da filial.
 type Escola struct {
 	gorm.Model
-	CNPJ         string `gorm:"uniqueIndex;not null"`
-	RazaoSocial  string `gorm:"not null"`
-	NomeFantasia string `gorm:"not null"`
-	IsMatriz     bool   `gorm:"not null;default:false"`
+	ClienteID    uint     `gorm:"not null;index"`
+	Cliente      *Cliente `gorm:"foreignKey:ClienteID"`
+	CNPJ         string   `gorm:"uniqueIndex;not null"`
+	RazaoSocial  string   `gorm:"not null"`
+	NomeFantasia string   `gorm:"not null"`
+	IsMatriz     bool     `gorm:"not null;default:false"`
 
 	MatrizID *uint
 	Matriz   *Escola  `gorm:"foreignKey:MatrizID"`
 	Filiais  []Escola `gorm:"foreignKey:MatrizID"`
 
 	// Relações operacionais futuras já nascem escopadas por unidade.
-	Salas  []Sala
-	Alunos []Aluno
+	Salas          []Sala
+	Alunos         []Aluno
+	UsuarioEscolas []UsuarioEscola
+}
+
+// UsuarioEscola representa o vínculo do usuário com uma unidade específica.
+// É aqui que o papel começa a ser contextualizado por escola/filial.
+// Exemplo real de negócio:
+// - usuário A pode ser coordenador da filial 1
+// - usuário B pode ser proprietário da matriz
+// - no futuro, o mesmo usuário poderia até ter papéis diferentes em unidades diferentes
+type UsuarioEscola struct {
+	gorm.Model
+	UsuarioID uint     `gorm:"not null;uniqueIndex:idx_usuario_escola"`
+	Usuario   *Usuario `gorm:"foreignKey:UsuarioID"`
+	EscolaID  uint     `gorm:"not null;uniqueIndex:idx_usuario_escola"`
+	Escola    *Escola  `gorm:"foreignKey:EscolaID"`
+	Role      string   `gorm:"not null"`
+	Ativo     bool     `gorm:"not null;default:true"`
 }
 
 // Sala representa o Berçário, Infantil 1, etc.
 type Sala struct {
 	gorm.Model
-	// Transitional note:
-	// já existem salas legadas no banco sem escola associada.
-	// Por isso o campo fica nullable no schema por enquanto, para a migration não falhar.
-	// A API continua exigindo escola_id nos novos cadastros via DTO + service.
-	EscolaID *uint   `gorm:"uniqueIndex:idx_sala_escola_nome_numero"`
+	EscolaID uint    `gorm:"not null;uniqueIndex:idx_sala_escola_nome_numero"`
 	Escola   *Escola `gorm:"foreignKey:EscolaID"`
 
 	// Nome pode se repetir entre salas diferentes.
@@ -70,11 +105,7 @@ type Sala struct {
 // Aluno representa as crianças
 type Aluno struct {
 	gorm.Model
-	// Transitional note:
-	// existem alunos legados sem escola associada no banco atual.
-	// Mantemos nullable no schema para permitir a migration, mas a API exige escola_id
-	// para qualquer novo aluno criado a partir desta fase.
-	EscolaID *uint   `gorm:"index"`
+	EscolaID uint    `gorm:"not null;index"`
 	Escola   *Escola `gorm:"foreignKey:EscolaID"`
 
 	Nome string `gorm:"not null"`
@@ -88,4 +119,28 @@ type Aluno struct {
 
 	// Relação de volta para os pais
 	Pais []Usuario `gorm:"many2many:aluno_pais;"`
+}
+
+// AuditLog registra ações sensíveis da plataforma e das escolas.
+// Diferente das entidades operacionais, ele é append-only por design:
+// criamos eventos, não editamos nem removemos históricos.
+type AuditLog struct {
+	ID                uint `gorm:"primaryKey"`
+	CreatedAt         time.Time
+	ActorUserID       *uint    `gorm:"index"`
+	ActorUser         *Usuario `gorm:"foreignKey:ActorUserID"`
+	ActorPlatformRole string
+	ActorSchoolRole   string
+	ActorEscolaID     *uint   `gorm:"index"`
+	ActorEscola       *Escola `gorm:"foreignKey:ActorEscolaID"`
+	TargetEscolaID    *uint   `gorm:"index"`
+	TargetEscola      *Escola `gorm:"foreignKey:TargetEscolaID"`
+	Action            string  `gorm:"not null;index"`
+	EntityType        string  `gorm:"not null;index"`
+	EntityID          string
+	Origin            string          `gorm:"not null"`
+	BeforeJSON        json.RawMessage `gorm:"type:jsonb"`
+	AfterJSON         json.RawMessage `gorm:"type:jsonb"`
+	IP                string
+	UserAgent         string
 }

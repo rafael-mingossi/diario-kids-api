@@ -19,7 +19,6 @@ func CriarInputToModel(input dto.CriarUsuarioInput, senhaHash string) models.Usu
 		Nome:      input.Nome,
 		Email:     input.Email,
 		SenhaHash: senhaHash, // Já chegou criptografado do Service
-		Role:      input.Role,
 	}
 }
 
@@ -30,10 +29,9 @@ func CriarInputToModel(input dto.CriarUsuarioInput, senhaHash string) models.Usu
 // mesmo que o model evolua e ganhe novos campos internos no futuro.
 func ModelToUsuarioResponse(u models.Usuario) dto.UsuarioResponse {
 	return dto.UsuarioResponse{
-		ID:    u.ID,   // ID gerado pelo banco após o INSERT
+		ID:    u.ID, // ID gerado pelo banco após o INSERT
 		Nome:  u.Nome,
 		Email: u.Email,
-		Role:  u.Role,
 		// SenhaHash é intencionalmente omitido aqui
 	}
 }

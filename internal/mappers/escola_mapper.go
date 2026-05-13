@@ -7,6 +7,7 @@ import (
 
 func CriarEscolaInputToModel(input dto.CriarEscolaInput) models.Escola {
 	return models.Escola{
+		ClienteID:    input.ClienteID,
 		CNPJ:         input.CNPJ,
 		RazaoSocial:  input.RazaoSocial,
 		NomeFantasia: input.NomeFantasia,
@@ -18,6 +19,7 @@ func CriarEscolaInputToModel(input dto.CriarEscolaInput) models.Escola {
 func ModelToEscolaResponse(e models.Escola) dto.EscolaResponse {
 	return dto.EscolaResponse{
 		ID:           e.ID,
+		ClienteID:    e.ClienteID,
 		CNPJ:         e.CNPJ,
 		RazaoSocial:  e.RazaoSocial,
 		NomeFantasia: e.NomeFantasia,

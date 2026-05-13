@@ -9,9 +9,8 @@ import (
 
 // CriarSalaInputToModel converte um DTO de entrada em um Model pronto para persistência.
 func CriarSalaInputToModel(input dto.CriarSalaInput) models.Sala {
-	escolaID := input.EscolaID
 	return models.Sala{
-		EscolaID:    &escolaID,
+		EscolaID:    input.EscolaID,
 		Nome:        input.Nome,
 		Numero:      input.Numero,
 		ProfessorID: input.ProfessorID,

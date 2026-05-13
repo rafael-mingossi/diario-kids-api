@@ -5,6 +5,7 @@ package dto
 // - matriz: IsMatriz=true e MatrizID=nil
 // - filial: IsMatriz=false e MatrizID apontando para a matriz dona
 type CriarEscolaInput struct {
+	ClienteID    uint   `json:"cliente_id" validate:"required"`
 	CNPJ         string `json:"cnpj" validate:"required"`
 	RazaoSocial  string `json:"razao_social" validate:"required,min=3"`
 	NomeFantasia string `json:"nome_fantasia" validate:"required,min=3"`
@@ -13,7 +14,8 @@ type CriarEscolaInput struct {
 }
 
 type EscolaResponse struct {
-	ID           uint  `json:"id"`
+	ID           uint   `json:"id"`
+	ClienteID    uint   `json:"cliente_id"`
 	CNPJ         string `json:"cnpj"`
 	RazaoSocial  string `json:"razao_social"`
 	NomeFantasia string `json:"nome_fantasia"`
