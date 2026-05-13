@@ -5,7 +5,7 @@ type CriarUsuarioInput struct {
 	Nome     string `json:"nome" validate:"required,min=3"`
 	Email    string `json:"email" validate:"required,email"`
 	Senha    string `json:"senha" validate:"required,min=8"`
-	Role     string `json:"role" validate:"required,oneof=pai professor coordenador diretor proprietario"`
+	Role     string `json:"role" validate:"required,oneof=responsavel professor coordenador diretor proprietario"`
 	EscolaID uint   `json:"escola_id" validate:"required"`
 }
 

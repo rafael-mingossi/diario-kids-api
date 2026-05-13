@@ -7,7 +7,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// Usuario representa Pais, Professores, Diretores e Proprietários.
+// Usuario representa identidades de login da plataforma.
+// O papel operacional dele por escola fica em UsuarioEscola.
 type Usuario struct {
 	// gorm.Model cria sozinho: ID, CreatedAt, UpdatedAt e DeletedAt
 	gorm.Model
@@ -20,9 +21,8 @@ type Usuario struct {
 
 	UsuarioEscolas []UsuarioEscola
 
-	// Relação Múltipla: Um pai tem vários alunos, um aluno tem vários pais.
-	// O GORM vai criar a tabela 'aluno_pais' sozinho por causa dessa tag 'many2many'
-	Alunos []Aluno `gorm:"many2many:aluno_pais;"`
+	// Um mesmo usuário responsável pode estar ligado a vários alunos.
+	AlunoResponsaveis []AlunoResponsavel
 }
 
 // Cliente representa a conta comercial do SaaS.
@@ -117,8 +117,30 @@ type Aluno struct {
 	SalaID *uint
 	Sala   *Sala
 
-	// Relação de volta para os pais
-	Pais []Usuario `gorm:"many2many:aluno_pais;"`
+	// Relação de volta para os responsáveis.
+	AlunoResponsaveis []AlunoResponsavel
+}
+
+// AlunoResponsavel guarda o vínculo explícito entre um aluno e um usuário responsável.
+// Aqui ficam os metadados de negócio que não pertencem nem ao usuário nem ao aluno isoladamente.
+// Exemplos:
+// - parentesco: mae, pai, avo, responsavel_legal, outro
+// - pode receber notificações
+// - pode buscar a criança
+// - é contato de emergência
+type AlunoResponsavel struct {
+	gorm.Model
+	AlunoID            uint     `gorm:"not null;uniqueIndex:idx_aluno_responsavel"`
+	Aluno              *Aluno   `gorm:"foreignKey:AlunoID"`
+	UsuarioID          uint     `gorm:"not null;uniqueIndex:idx_aluno_responsavel"`
+	Usuario            *Usuario `gorm:"foreignKey:UsuarioID"`
+	Parentesco         string   `gorm:"not null"`
+	ResponsavelLegal   bool     `gorm:"not null;default:false"`
+	RecebeNotificacoes bool     `gorm:"not null;default:true"`
+	ContatoEmergencia  bool     `gorm:"not null;default:false"`
+	AutorizadoBusca    bool     `gorm:"not null;default:false"`
+	Observacao         string
+	Ativo              bool `gorm:"not null;default:true"`
 }
 
 // AuditLog registra ações sensíveis da plataforma e das escolas.

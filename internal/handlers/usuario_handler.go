@@ -69,6 +69,10 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusConflict, err.Error())
 			return
 		}
+		if errors.Is(err, services.ErrEscolaNaoEncontrada) {
+			writeJSONError(w, http.StatusUnprocessableEntity, "escola informada não existe")
+			return
+		}
 
 		// Feedback 1: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal
 		slog.Error("Erro interno ao criar usuário", "detalhe", err)
