@@ -11,6 +11,10 @@ import (
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/database"
 	"github.com/rafael-mingossi/diario-kids-api/internal/handlers"
+
+	// Importamos nosso middleware com um alias 'authmiddleware' para não colidir
+	// com o pacote de middleware do Chi que também se chama 'middleware'.
+	authmiddleware "github.com/rafael-mingossi/diario-kids-api/internal/middleware"
 	"github.com/rafael-mingossi/diario-kids-api/internal/repository"
 	"github.com/rafael-mingossi/diario-kids-api/internal/services"
 
@@ -31,6 +35,16 @@ func main() {
 		slog.Warn("⚠️  Aviso: Arquivo .env não encontrado, usando variáveis de sistema.")
 	}
 
+	// Validação de segurança: o JWT_SECRET é obrigatório para a API funcionar.
+	// Se não estiver definido, matamos o processo na inicialização — é muito melhor
+	// descobrir isso agora do que servir tokens inválidos em produção.
+	// Analogia JS: como um `if (!process.env.JWT_SECRET) throw new Error(...)` no topo do app.
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		slog.Error("JWT_SECRET não encontrado. Defina-o no .env ou nas variáveis de ambiente.")
+		os.Exit(1)
+	}
+
 	// Conecta ao banco de dados (Supabase)
 	db, err := database.ConnectDB()
 	if err != nil {
@@ -44,18 +58,32 @@ func main() {
 	// ==========================================
 
 	// 1. Repositórios (Acesso a dados)
-	// Criamos a conexão com a tabela de usuários uma única vez
 	usuarioRepo := repository.NewUsuarioRepository(db)
+	usuarioEscolaRepo := repository.NewUsuarioEscolaRepository(db)
+	auditLogRepo := repository.NewAuditLogRepository(db)
+	clienteRepo := repository.NewClienteRepository(db)
+	escolaRepo := repository.NewEscolaRepository(db)
+	salaRepo := repository.NewSalaRepository(db)
+	alunoRepo := repository.NewAlunoRepository(db)
 
 	// 2. Serviços (Regras de negócio)
-	usuarioService := services.NewUsuarioService(usuarioRepo)
-	// NOVIDADE: Criamos o AuthService reutilizando o mesmo usuarioRepo!
-	authService := services.NewAuthService(usuarioRepo)
+	setupService := services.NewSetupService(db)
+	auditService := services.NewAuditService(auditLogRepo)
+	clienteService := services.NewClienteService(clienteRepo)
+	usuarioService := services.NewUsuarioService(usuarioRepo, escolaRepo, usuarioEscolaRepo)
+	authService := services.NewAuthService(usuarioRepo, usuarioEscolaRepo)
+	escolaService := services.NewEscolaService(escolaRepo, clienteRepo)
+	salaService := services.NewSalaService(salaRepo, escolaRepo)
+	alunoService := services.NewAlunoService(alunoRepo, salaRepo, escolaRepo)
 
 	// 3. Handlers (Recepção HTTP)
-	usuarioHandler := handlers.NewUsuarioHandler(usuarioService)
-	// NOVIDADE: Injetamos o authService no authHandler
+	setupHandler := handlers.NewSetupHandler(setupService, auditService)
+	clienteHandler := handlers.NewClienteHandler(clienteService, auditService)
+	usuarioHandler := handlers.NewUsuarioHandler(usuarioService, auditService)
 	authHandler := handlers.NewAuthHandler(authService)
+	escolaHandler := handlers.NewEscolaHandler(escolaService, auditService)
+	salaHandler := handlers.NewSalaHandler(salaService)
+	alunoHandler := handlers.NewAlunoHandler(alunoService)
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
@@ -74,15 +102,64 @@ func main() {
 	r.Use(middleware.Logger)    // Faz um "console.log" automático de cada requisição
 	r.Use(middleware.Recoverer) // Se o app der um erro fatal (panic), ele não derruba o servidor inteiro
 
-	// rota inicial
+	// ==========================================
+	// ROTAS PÚBLICAS — não precisam de token JWT
+	// ==========================================
+
+	// Health check — sempre acessível
 	r.Get("/api/status", handlers.StatusHandler)
+	r.Post("/api/setup-inicial", setupHandler.SetupInicial)
 
-	// === NOVIDADE: A nossa nova rota POST ===
-	r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
+	// Login com rate limiting por IP.
+	//
+	// NovoLimitadorPorIP(1, 5) significa:
+	//   - 1 = taxa de reabastecimento: 1 ficha por segundo por IP
+	//   - 5 = burst: um IP pode fazer até 5 tentativas instantâneas antes de ser bloqueado
+	//
+	// Valores conservadores adequados para login:
+	//   - Um humano que errou a senha 3 vezes ainda passa (burst de 5 cobre isso).
+	//   - Após esgotar o burst, só consegue 1 nova tentativa por segundo.
+	//   - Scripts de brute force são bloqueados após a 5ª tentativa.
+	//
+	// r.With() aplica o middleware APENAS para esta rota específica.
+	// Analogia JS: router.post('/api/login', rateLimitMiddleware, authHandler.login)
+	loginLimiter := authmiddleware.NovoLimitadorPorIP(1, 5)
+	r.With(loginLimiter.LimitarRequisicoes()).Post("/api/login", authHandler.Login)
 
-	// === NOVIDADE: Rota de login ===
-	r.Post("/api/login", authHandler.Login)
-	// ========================================
+	// ==========================================
+	// ROTAS PROTEGIDAS — exigem token JWT válido
+	// ==========================================
+	// r.Group cria um sub-roteador isolado onde aplicamos o middleware apenas
+	// para as rotas dentro do bloco. Rotas fora do grupo não são afetadas.
+	//
+	// Analogia JS: é como criar um router separado no Express e fazer
+	// router.use(authenticateToken) antes de registrar as rotas protegidas,
+	// depois montar com app.use('/api', router).
+	r.Group(func(r chi.Router) {
+		// Aplicamos o middleware de verificação JWT a todas as rotas deste grupo.
+		// Passamos o secret lido do ambiente — injeção de dependência, não global.
+		r.Use(authmiddleware.Verificar(jwtSecret))
+
+		// Rotas globais da plataforma: provisionam novas contas clientes.
+		r.Group(func(r chi.Router) {
+			r.Use(authmiddleware.ApenasPlatformAdmin())
+
+			// Cliente representa a conta comercial do SaaS.
+			r.Post("/api/clientes", clienteHandler.CriarCliente)
+
+			// Escola/Unidade nasce a partir da operação da plataforma.
+			r.Post("/api/escolas", escolaHandler.CriarEscola)
+
+			// O primeiro usuário da escola também nasce a partir da plataforma.
+			r.Post("/api/usuarios", usuarioHandler.CriarUsuario)
+		})
+
+		// Sala — apenas usuários autenticados podem criar salas
+		r.Post("/api/salas", salaHandler.CriarSala)
+
+		// Aluno — apenas usuários autenticados podem criar alunos
+		r.Post("/api/alunos", alunoHandler.CriarAluno)
+	})
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas
 	// http.ListenAndServe. Precisamos criar uma "Instância" do servidor:

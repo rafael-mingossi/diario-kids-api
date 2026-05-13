@@ -6,6 +6,7 @@ import (
 
 	"github.com/rafael-mingossi/diario-kids-api/internal/dto"
 	"github.com/rafael-mingossi/diario-kids-api/internal/mappers"
+	"github.com/rafael-mingossi/diario-kids-api/internal/models"
 	"github.com/rafael-mingossi/diario-kids-api/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -18,12 +19,14 @@ type UsuarioService interface {
 // A implementação virou privada (letra minúscula)
 // Service is an interface for the same reason — the handler depends on it
 type usuarioService struct {
-	repo repository.UsuarioRepository
+	repo               repository.UsuarioRepository
+	escolaRepo         repository.EscolaRepository
+	usuarioEscolaRepo  repository.UsuarioEscolaRepository
 }
 
 // O construtor devolve a Interface
-func NewUsuarioService(repo repository.UsuarioRepository) UsuarioService {
-	return &usuarioService{repo: repo}
+func NewUsuarioService(repo repository.UsuarioRepository, escolaRepo repository.EscolaRepository, usuarioEscolaRepo repository.UsuarioEscolaRepository) UsuarioService {
+	return &usuarioService{repo: repo, escolaRepo: escolaRepo, usuarioEscolaRepo: usuarioEscolaRepo}
 }
 
 // NOVIDADE: Criamos um erro customizado para o Handler saber quando é conflito
@@ -31,6 +34,14 @@ var ErrEmailEmUso = errors.New("este email já está cadastrado")
 
 // O Service recebe o DTO de Input, processa as regras de negócio, e devolve o DTO de Output
 func (s *usuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.UsuarioResponse, error) {
+	// Na Fase 2, todo novo usuário já nasce vinculado a uma escola/unidade específica.
+	escola, err := s.escolaRepo.BuscarPorID(input.EscolaID)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao verificar escola: %w", err)
+	}
+	if escola == nil {
+		return nil, ErrEscolaNaoEncontrada
+	}
 
 	// 1. Verificamos se o email já existe (Feedback 2)
 	usuarioExistente, err := s.repo.BuscarPorEmail(input.Email)
@@ -66,7 +77,18 @@ func (s *usuarioService) CriarUsuario(input dto.CriarUsuarioInput) (*dto.Usuario
 
 	// 5. Delegação ao Mapper: transforma o Model salvo (já com ID do banco) em DTO de saída.
 	// SenhaHash é omitido pelo mapper — o cliente nunca a recebe.
+	vinculo := models.UsuarioEscola{
+		UsuarioID: novoUsuario.ID,
+		EscolaID:  input.EscolaID,
+		Role:      input.Role,
+		Ativo:     true,
+	}
+	if err := s.usuarioEscolaRepo.Criar(&vinculo); err != nil {
+		return nil, fmt.Errorf("erro ao criar vínculo usuário-escola: %w", err)
+	}
+
 	resposta := mappers.ModelToUsuarioResponse(novoUsuario)
+	resposta.EscolaID = input.EscolaID
 
 	return &resposta, nil
 }

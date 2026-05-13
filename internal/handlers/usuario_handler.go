@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/rafael-mingossi/diario-kids-api/internal/dto"
@@ -14,6 +15,7 @@ import (
 type UsuarioHandler struct {
 	// NOVIDADE: Agora usamos a Interface (sem o asterisco *)
 	service  services.UsuarioService
+	audit    services.AuditService
 	validate *validator.Validate
 }
 
@@ -24,10 +26,11 @@ type UsuarioHandler struct {
 // O * no retorno significa "Aviso: quem chamar essa função vai receber um endereço, não a struct inteira".
 // Se a função retornasse apenas UsuarioHandler (sem *), ela criaria o objeto e entregaria uma cópia pesada para quem a chamou.
 // Retornando o ponteiro, você passa o objeto recém-criado adiante de forma super leve.
-func NewUsuarioHandler(service services.UsuarioService) *UsuarioHandler {
+func NewUsuarioHandler(service services.UsuarioService, audit services.AuditService) *UsuarioHandler {
 	// O & comercial significa "Crie isso na memória e me dê o endereço de onde ficou"
 	return &UsuarioHandler{
 		service:  service,
+		audit:    audit,
 		validate: validator.New(),
 	}
 }
@@ -35,15 +38,26 @@ func NewUsuarioHandler(service services.UsuarioService) *UsuarioHandler {
 func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	var input dto.CriarUsuarioInput
 
-	// 1. Lê o JSON (O Garçom anota o pedido)
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "JSON mal formatado", http.StatusBadRequest)
+	// 1. Limita o tamanho do body para prevenir "body bomb" (DoS por payload gigante).
+	r.Body = http.MaxBytesReader(w, r.Body, 1*1024*1024) // 1MB
+
+	// 2. Lê o JSON (O Garçom anota o pedido).
+	// DisallowUnknownFields rejeita campos extras não declarados no DTO.
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "corpo da requisição muito grande")
+			return
+		}
+		writeJSONError(w, http.StatusBadRequest, "JSON mal formatado")
 		return
 	}
 
 	// 2. Valida o input automaticamente usando as tags do DTO
 	if err := h.validate.Struct(input); err != nil {
-		http.Error(w, "Dados de entrada inválidos (verifique email, tamanho da senha, etc)", http.StatusUnprocessableEntity)
+		writeJSONError(w, http.StatusUnprocessableEntity, "dados de entrada inválidos")
 		return
 	}
 
@@ -52,22 +66,43 @@ func (h *UsuarioHandler) CriarUsuario(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Feedback 2: Tratamos o erro específico de conflito (HTTP 409)
 		if errors.Is(err, services.ErrEmailEmUso) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			writeJSONError(w, http.StatusConflict, err.Error())
 			return
 		}
 
 		// Feedback 1: Segurança (OWASP) - Escondemos o erro real do usuário, logamos no terminal
 		slog.Error("Erro interno ao criar usuário", "detalhe", err)
-		http.Error(w, "Erro interno no servidor. Tente novamente mais tarde.", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
 		return
 	}
 
-	// 4. Entrega o prato (HTTP 201 Created com a resposta limpa)
+	actorUserID, actorPlatformRole, actorSchoolRole, actorEscolaID := actorFromRequest(r)
+	targetEscolaID := input.EscolaID
+	registrarAuditoriaBestEffort(h.audit, r, services.AuditLogInput{
+		ActorUserID:       actorUserID,
+		ActorPlatformRole: actorPlatformRole,
+		ActorSchoolRole:   actorSchoolRole,
+		ActorEscolaID:     actorEscolaID,
+		TargetEscolaID:    &targetEscolaID,
+		Action:            "create",
+		EntityType:        "usuario",
+		EntityID:          strconv.FormatUint(uint64(resposta.ID), 10),
+		Origin:            "api",
+		After:             resposta,
+	})
+
+	// 4. Serializamos a resposta ANTES de escrever qualquer header.
+	// Mesmo padrão do auth_handler: se o Marshal falhar, ainda podemos retornar 500.
+	// Se chamarmos WriteHeader(201) primeiro e o Marshal falhar depois, o cliente
+	// recebe um 201 com corpo vazio — inconsistência difícil de depurar.
+	corpo, err := json.Marshal(resposta)
+	if err != nil {
+		slog.Error("erro ao serializar resposta de criação de usuário", "detalhe", err)
+		writeJSONError(w, http.StatusInternalServerError, "erro interno no servidor")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-
-	// Feedback 4: Não ignoramos o erro do JSON Encoder
-	if err := json.NewEncoder(w).Encode(resposta); err != nil {
-		slog.Error("Erro ao enviar resposta JSON", "detalhe", err)
-	}
+	w.Write(corpo) //nolint:errcheck // Erro de escrita de rede após WriteHeader não é acionável
 }
