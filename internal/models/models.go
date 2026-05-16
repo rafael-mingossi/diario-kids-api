@@ -143,6 +143,10 @@ type AlunoResponsavel struct {
 	Ativo              bool `gorm:"not null;default:true"`
 }
 
+func (AlunoResponsavel) TableName() string {
+	return "aluno_responsaveis"
+}
+
 // AuditLog registra ações sensíveis da plataforma e das escolas.
 // Diferente das entidades operacionais, ele é append-only por design:
 // criamos eventos, não editamos nem removemos históricos.

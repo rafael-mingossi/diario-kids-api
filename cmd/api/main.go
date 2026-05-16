@@ -65,6 +65,7 @@ func main() {
 	escolaRepo := repository.NewEscolaRepository(db)
 	salaRepo := repository.NewSalaRepository(db)
 	alunoRepo := repository.NewAlunoRepository(db)
+	alunoResponsavelRepo := repository.NewAlunoResponsavelRepository(db)
 
 	// 2. Serviços (Regras de negócio)
 	setupService := services.NewSetupService(db)
@@ -75,6 +76,7 @@ func main() {
 	escolaService := services.NewEscolaService(escolaRepo, clienteRepo)
 	salaService := services.NewSalaService(salaRepo, escolaRepo)
 	alunoService := services.NewAlunoService(alunoRepo, salaRepo, escolaRepo)
+	alunoResponsavelService := services.NewAlunoResponsavelService(alunoResponsavelRepo, alunoRepo, usuarioRepo, usuarioEscolaRepo)
 
 	// 3. Handlers (Recepção HTTP)
 	setupHandler := handlers.NewSetupHandler(setupService, auditService)
@@ -84,6 +86,7 @@ func main() {
 	escolaHandler := handlers.NewEscolaHandler(escolaService, auditService)
 	salaHandler := handlers.NewSalaHandler(salaService)
 	alunoHandler := handlers.NewAlunoHandler(alunoService)
+	alunoResponsavelHandler := handlers.NewAlunoResponsavelHandler(alunoResponsavelService, auditService)
 
 	// Porta Dinâmica
 	port := os.Getenv("PORT")
@@ -159,6 +162,9 @@ func main() {
 
 		// Aluno — apenas usuários autenticados podem criar alunos
 		r.Post("/api/alunos", alunoHandler.CriarAluno)
+
+		// Vínculo entre aluno e responsável.
+		r.Post("/api/aluno-responsaveis", alunoResponsavelHandler.Vincular)
 	})
 
 	// Para termos controle sobre o desligamento, não podemos usar apenas

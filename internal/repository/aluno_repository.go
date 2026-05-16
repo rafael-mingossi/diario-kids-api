@@ -12,6 +12,7 @@ import (
 type AlunoRepository interface {
 	Criar(aluno *models.Aluno) error
 	BuscarPorMatricula(matricula string) (*models.Aluno, error)
+	BuscarPorID(id uint) (*models.Aluno, error)
 }
 
 // interface privada
@@ -45,6 +46,18 @@ func (r *alunoRepository) Criar(aluno *models.Aluno) error {
 func (r *alunoRepository) BuscarPorMatricula(matricula string) (*models.Aluno, error) {
 	var aluno models.Aluno
 	err := r.db.Where("matricula = ?", matricula).First(&aluno).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &aluno, nil
+}
+
+func (r *alunoRepository) BuscarPorID(id uint) (*models.Aluno, error) {
+	var aluno models.Aluno
+	err := r.db.First(&aluno, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
